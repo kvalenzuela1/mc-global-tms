@@ -1,0 +1,57 @@
+/**
+ * FR-RBAC-03/04 + FR-MASK-01 — Permission matrix decisions.
+ */
+import { describe, it, expect } from 'vitest';
+import { ROLES } from '@/lib/rbac/roles';
+import { can, canSeeCommercials, PERMISSIONS } from '@/lib/rbac/permissions';
+
+describe('RBAC permission matrix', () => {
+  it('FR-RBAC-04: broker manager can approve pricing overrides', () => {
+    expect(can(ROLES.BROKER_MANAGER, PERMISSIONS.PRICING_OVERRIDE_APPROVE)).toBe(true);
+  });
+
+  it('FR-RBAC-04: broker dispatcher cannot approve pricing overrides', () => {
+    expect(can(ROLES.BROKER_DISPATCHER, PERMISSIONS.PRICING_OVERRIDE_APPROVE)).toBe(false);
+  });
+
+  it('FR-MASK-01: driver cannot view commercials, pricing, ratecons, or invoices', () => {
+    expect(canSeeCommercials(ROLES.DRIVER)).toBe(false);
+    expect(can(ROLES.DRIVER, PERMISSIONS.PRICING_VIEW)).toBe(false);
+    expect(can(ROLES.DRIVER, PERMISSIONS.RATECON_VIEW)).toBe(false);
+    expect(can(ROLES.DRIVER, PERMISSIONS.INVOICE_CREATE)).toBe(false);
+    expect(can(ROLES.DRIVER, PERMISSIONS.SETTLEMENT_CREATE)).toBe(false);
+  });
+
+  it('FR-RBAC-03: driver retains operational permissions', () => {
+    expect(can(ROLES.DRIVER, PERMISSIONS.DRIVER_ACK)).toBe(true);
+    expect(can(ROLES.DRIVER, PERMISSIONS.MILESTONE_RECORD)).toBe(true);
+  });
+
+  it('FR-RBAC-04: only carrier dispatch can sign a rate confirmation', () => {
+    expect(can(ROLES.CARRIER_DISPATCH, PERMISSIONS.RATECON_SIGN)).toBe(true);
+    expect(can(ROLES.BROKER_MANAGER, PERMISSIONS.RATECON_SIGN)).toBe(false);
+    expect(can(ROLES.DRIVER, PERMISSIONS.RATECON_SIGN)).toBe(false);
+  });
+
+  it('FR-RBAC-04: only brokers/admin can release a load to the driver', () => {
+    expect(can(ROLES.BROKER_DISPATCHER, PERMISSIONS.LOAD_RELEASE_DRIVER)).toBe(true);
+    expect(can(ROLES.ORG_ADMIN, PERMISSIONS.LOAD_RELEASE_DRIVER)).toBe(true);
+    expect(can(ROLES.CARRIER_DISPATCH, PERMISSIONS.LOAD_RELEASE_DRIVER)).toBe(false);
+  });
+
+  it('FR-RBAC-02: platform superadmin has no tenant data permissions', () => {
+    expect(can(ROLES.PLATFORM_SUPERADMIN, PERMISSIONS.LOAD_VIEW)).toBe(false);
+    expect(can(ROLES.PLATFORM_SUPERADMIN, PERMISSIONS.COMMERCIALS_VIEW)).toBe(false);
+  });
+
+  it('FR-RBAC-04: multiple roles union their grants', () => {
+    expect(can([ROLES.DRIVER, ROLES.BROKER_MANAGER], PERMISSIONS.INVOICE_CREATE)).toBe(true);
+  });
+
+  it('FR-RBAC-04: shipper is limited to RFQ + tracking + document view', () => {
+    expect(can(ROLES.SHIPPER, PERMISSIONS.RFQ_CREATE)).toBe(true);
+    expect(can(ROLES.SHIPPER, PERMISSIONS.SHIPPER_TRACK)).toBe(true);
+    expect(can(ROLES.SHIPPER, PERMISSIONS.LOAD_CREATE)).toBe(false);
+    expect(can(ROLES.SHIPPER, PERMISSIONS.COMMERCIALS_VIEW)).toBe(false);
+  });
+});

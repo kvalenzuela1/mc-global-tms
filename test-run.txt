@@ -1,0 +1,27 @@
+=== M.C. Global TMS — Milestones 1 & 2 test run (2026-07-20T09:24:33Z) ===
+
+### Pure-logic suites (Node built-in runner over TypeScript source) ###
+# tests 48
+# suites 8
+# pass 48
+# fail 0
+
+### Live database RLS + audit checks (psql, RLS enforced as app_user) ###
+FR-TEN / FR-MASK — tenant isolation + commercial hiding
+  PASS  FR-TEN-01 dispatcher sees own load
+  PASS  FR-TEN-01 dispatcher blind to rival load
+  PASS  FR-TEN-01 rival blind to MCG load
+  PASS  FR-TEN-02 rival blind to MCG memberships
+  PASS  FR-TEN-04 carrier sees only assigned load
+  PASS  FR-MASK-01 carrier blind to quotes
+  PASS  FR-TEN-04 driver sees only own load
+  PASS  FR-MASK-01 driver blind to quotes
+FR-TEN — write guard (WITH CHECK)
+  PASS  FR-TEN-01 cross-org write blocked
+FR-AUD — auto-audit + append-only
+  PASS  FR-AUD-01 transition auto-audited
+  PASS  FR-AUD-03 driver blind to audit trail
+  PASS  FR-AUD-02 audit UPDATE blocked
+  PASS  FR-AUD-02 audit DELETE blocked
+
+ALL DB CHECKS PASSED
