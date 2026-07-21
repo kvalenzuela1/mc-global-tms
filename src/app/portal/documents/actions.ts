@@ -67,6 +67,8 @@ function sanitizeFileName(name: string): string {
   return name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function uploadDocument(formData: FormData): Promise<ActionResult> {
   const orgId = String(formData.get('orgId') ?? '');
   const loadId = String(formData.get('loadId') ?? '');
@@ -89,6 +91,15 @@ export async function uploadDocument(formData: FormData): Promise<ActionResult> 
   const load = await resolveAccessibleLoad(supabase, membership.role, ctx.userId, loadId);
   if (!load) return { ok: false, error: 'Load not found.' };
 
+  // load.org_id/load.id come straight from the DB (always real UUIDs, never
+  // user-supplied path text) and the filename above is already stripped of
+  // "/" — so a stray slash can't reach the path today. Asserting the UUID
+  // shape here is defense-in-depth against that guarantee ever quietly
+  // breaking in a future refactor, not a fix for a currently reachable bug.
+  if (!UUID_RE.test(load.org_id) || !UUID_RE.test(load.id)) {
+    throw new Error(`Unexpected non-UUID org/load id building a document path: ${load.org_id}/${load.id}`);
+  }
+
   const bytes = new Uint8Array(await file.arrayBuffer());
   const path = `${load.org_id}/${load.id}/${randomUUID()}-${sanitizeFileName(file.name)}`;
 
@@ -109,7 +120,14 @@ export async function uploadDocument(formData: FormData): Promise<ActionResult> 
     })
     .select('id')
     .single();
-  if (insertError) throw insertError;
+  if (insertError) {
+    // The upload above already succeeded — without this, a failed insert
+    // (e.g. a transient DB error) leaves an orphaned file with no record of
+    // it anywhere. Best-effort: if the cleanup itself fails, the original
+    // insert error is still what gets thrown, not swallowed.
+    await supabase.storage.from('documents').remove([path]).catch(() => {});
+    throw insertError;
+  }
 
   await writeAudit({
     orgId: load.org_id,
