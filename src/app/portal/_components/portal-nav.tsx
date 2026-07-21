@@ -26,11 +26,13 @@ import type { Role } from '@/lib/rbac/roles';
  * filtering. `can()` has no Next/Supabase imports, so it's safe client-side;
  * every route still re-checks permission server-side regardless (FR-RBAC-05).
  */
-const NAV: { href: string; label: string; perm: (typeof PERMISSIONS)[keyof typeof PERMISSIONS] | null; icon: LucideIcon }[] = [
+type NavPerm = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+
+const NAV: { href: string; label: string; perm: NavPerm | NavPerm[] | null; icon: LucideIcon }[] = [
   { href: '/portal', label: 'Overview', perm: null, icon: LayoutDashboard },
-  { href: '/portal/rfqs', label: 'RFQs & Quotes', perm: PERMISSIONS.RFQ_VIEW, icon: FilePlus2 },
+  { href: '/portal/rfqs', label: 'RFQs & Quotes', perm: [PERMISSIONS.RFQ_VIEW, PERMISSIONS.RFQ_CREATE], icon: FilePlus2 },
   { href: '/portal/pricing', label: 'Margin Calculator', perm: PERMISSIONS.PRICING_VIEW, icon: Percent },
-  { href: '/portal/loads', label: 'Loads', perm: PERMISSIONS.LOAD_VIEW, icon: Package },
+  { href: '/portal/loads', label: 'Loads', perm: [PERMISSIONS.LOAD_VIEW, PERMISSIONS.SHIPPER_TRACK], icon: Package },
   { href: '/portal/ratecons', label: 'Rate Confirmations', perm: PERMISSIONS.RATECON_VIEW, icon: FileCheck2 },
   { href: '/portal/carriers', label: 'Carrier Compliance', perm: PERMISSIONS.CARRIER_VIEW, icon: ShieldCheck },
   { href: '/portal/driver', label: 'Driver Brief', perm: PERMISSIONS.DRIVER_BRIEF_VIEW, icon: Truck },
@@ -42,7 +44,10 @@ const NAV: { href: string; label: string; perm: (typeof PERMISSIONS)[keyof typeo
 
 export function PortalNav({ role }: { role: Role }) {
   const pathname = usePathname();
-  const visible = NAV.filter((n) => n.perm === null || can(role, n.perm));
+  const visible = NAV.filter((n) => {
+    if (n.perm === null) return true;
+    return Array.isArray(n.perm) ? n.perm.some((p) => can(role, p)) : can(role, n.perm);
+  });
 
   return (
     <nav className="mt-6 space-y-1">

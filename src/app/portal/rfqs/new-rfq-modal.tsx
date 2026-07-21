@@ -10,7 +10,16 @@ interface ShipperRow {
   name: string;
 }
 
-export function NewRfqModal({ orgId, shippers }: { orgId: string; shippers: ShipperRow[] }) {
+export function NewRfqModal({
+  orgId,
+  shippers,
+  hideShipperField,
+}: {
+  orgId: string;
+  shippers: ShipperRow[];
+  /** A shipper submitting their own RFQ doesn't pick a shipper — they are one. */
+  hideShipperField?: boolean;
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -28,7 +37,14 @@ export function NewRfqModal({ orgId, shippers }: { orgId: string; shippers: Ship
           half-filled input state — no manual `form.reset()` needed. Reuse
           this open-gated-mount pattern rather than `useState` + manual reset
           if another modal needs the same behavior. */}
-      {open && <RfqDialog orgId={orgId} shippers={shippers} setOpen={setOpen} />}
+      {open && (
+        <RfqDialog
+          orgId={orgId}
+          shippers={shippers}
+          hideShipperField={hideShipperField}
+          setOpen={setOpen}
+        />
+      )}
     </>
   );
 }
@@ -36,10 +52,12 @@ export function NewRfqModal({ orgId, shippers }: { orgId: string; shippers: Ship
 function RfqDialog({
   orgId,
   shippers,
+  hideShipperField,
   setOpen,
 }: {
   orgId: string;
   shippers: ShipperRow[];
+  hideShipperField?: boolean;
   setOpen: (open: boolean) => void;
 }) {
   // This component only exists in the tree while the modal is open (see
@@ -85,17 +103,19 @@ function RfqDialog({
 
         <ActionForm action={createRfq} className="mt-4 space-y-4" onSuccess={() => setOpen(false)}>
           <input type="hidden" name="orgId" value={orgId} />
-          <div>
-            <label className="block text-sm mb-1">Shipper</label>
-            <select name="shipperId" className="input">
-              <option value="">— Unassigned —</option>
-              {shippers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {!hideShipperField && (
+            <div>
+              <label className="block text-sm mb-1">Shipper</label>
+              <select name="shipperId" className="input">
+                <option value="">— Unassigned —</option>
+                {shippers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm mb-1">Origin</label>
