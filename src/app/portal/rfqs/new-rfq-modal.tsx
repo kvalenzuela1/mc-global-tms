@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ActionForm } from '../_components/action-form';
 import { SubmitButton } from '../_components/submit-button';
 import { createRfq } from './actions';
+import { PACKAGING_TYPES, PACKAGING_TYPE_LABELS, FREIGHT_CLASSES } from '@/lib/rfqs/freight-detail';
 
 interface ShipperRow {
   id: string;
@@ -130,6 +131,71 @@ function RfqDialog({
             <label className="block text-sm mb-1">Freight details</label>
             <input name="freightDetails" placeholder="18,000 lbs · 26 pallets" className="input" />
           </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-sm mb-1">Packaging type</label>
+              <select name="packagingType" className="input">
+                <option value="">—</option>
+                {PACKAGING_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {PACKAGING_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm mb-1">Piece count</label>
+              <input type="number" min="0" step="1" name="pieceCount" className="input" />
+            </div>
+            <div>
+              <label className="block text-sm mb-1">Package count</label>
+              <input type="number" min="0" step="1" name="packageCount" className="input" />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">Gross weight</label>
+            <div className="grid grid-cols-2 gap-2">
+              <input type="number" min="0" step="0.01" name="grossWeightValue" className="input" />
+              <select name="grossWeightUnit" defaultValue="lb" className="input">
+                <option value="lb">LB</option>
+                <option value="kg">KG</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">Dimensions (L × W × H)</label>
+            <div className="grid grid-cols-4 gap-2">
+              <input type="number" min="0" step="0.01" name="lengthValue" placeholder="Length" className="input" />
+              <input type="number" min="0" step="0.01" name="widthValue" placeholder="Width" className="input" />
+              <input type="number" min="0" step="0.01" name="heightValue" placeholder="Height" className="input" />
+              <select name="dimensionUnit" defaultValue="in" className="input">
+                <option value="in">IN</option>
+                <option value="cm">CM</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm mb-1">NMFC code</label>
+              <input name="nmfcCode" className="input" />
+            </div>
+            <div>
+              <label className="block text-sm mb-1">Freight class</label>
+              <select name="freightClass" className="input">
+                <option value="">—</option>
+                {FREIGHT_CLASSES.map((c) => (
+                  <option key={c} value={c}>
+                    Class {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm mb-1">Pickup date/time</label>
             <input type="datetime-local" name="pickupAt" className="input" />
