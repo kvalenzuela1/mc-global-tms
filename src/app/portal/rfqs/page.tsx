@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getSessionContext } from '@/lib/tenant/context';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { ROLES } from '@/lib/rbac/roles';
@@ -85,7 +86,9 @@ export default async function RfqsPage() {
             {((rfqs as RfqRow[]) ?? []).map((r) => (
               <tr key={r.id} className="table-row border-t border-line">
                 <td className="py-2">
-                  {r.origin} → {r.destination}
+                  <Link href={`/portal/rfqs/${r.id}`} className="hover:text-copper-400">
+                    {r.origin} → {r.destination}
+                  </Link>
                 </td>
                 <td className="py-2">{r.service_type}</td>
                 <td className="py-2">
