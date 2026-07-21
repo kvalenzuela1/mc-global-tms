@@ -17,6 +17,7 @@ import { getCarrierComplianceResult } from '@/lib/compliance/policy.server';
 import { evaluateComplianceOverride } from '@/lib/compliance/override';
 import type { ComplianceResult } from '@/lib/compliance/gate';
 import { RFQ_STATUS } from '@/lib/rfqs/lifecycle';
+import { validateAccessorial } from '@/lib/accessorials/calc';
 import type { ActionResult } from '@/lib/actions/result';
 
 const NOT_REVIEWED_RESULT: ComplianceResult = {
@@ -301,6 +302,62 @@ export async function advanceLoadStatus(formData: FormData): Promise<ActionResul
     entityId: loadId,
     before: { status: from },
     after: { status: to },
+  });
+
+  revalidatePath('/portal/loads');
+  return { ok: true };
+}
+
+/**
+ * FR-ACC-01/02: record an accessorial charge against a load — detention,
+ * layover, a lumper fee, or TONU. This is a record of a charge, not a
+ * payment (Phase 1 does not move money): it doesn't touch the load's
+ * commercial_snapshot or recompute margin, it's an additive line item for
+ * the invoice engine to pick up once that exists (M6).
+ */
+export async function addAccessorial(formData: FormData): Promise<ActionResult> {
+  const orgId = String(formData.get('orgId') ?? '');
+  const loadId = String(formData.get('loadId') ?? '');
+  const type = String(formData.get('type') ?? '');
+  const billableTo = String(formData.get('billableTo') ?? '');
+  const dollars = Number(formData.get('amountDollars'));
+  const description = String(formData.get('description') ?? '').trim() || null;
+
+  const { ctx } = await requirePermission(orgId, PERMISSIONS.LOAD_EDIT);
+
+  if (!Number.isFinite(dollars) || dollars <= 0) {
+    return { ok: false, error: 'Enter a valid amount.' };
+  }
+  const amountCents = Math.round(dollars * 100);
+
+  const validation = validateAccessorial({ type, amountCents, billableTo, description: description ?? undefined });
+  if (!validation.ok) {
+    return { ok: false, error: validation.error };
+  }
+
+  const supabase = await getServerSupabase();
+  const { data, error } = await supabase
+    .from('accessorials')
+    .insert({
+      org_id: orgId,
+      load_id: loadId,
+      type,
+      amount_cents: amountCents,
+      billable_to: billableTo,
+      description,
+      created_by: ctx.userId,
+    })
+    .select('id')
+    .single();
+  if (error) throw error;
+
+  await writeAudit({
+    orgId,
+    actorUserId: ctx.userId,
+    action: AUDIT_ACTIONS.ACCESSORIAL_ADDED,
+    entityType: 'load',
+    entityId: loadId,
+    after: { accessorialId: data.id, type, amountCents, billableTo },
   });
 
   revalidatePath('/portal/loads');

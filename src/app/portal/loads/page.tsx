@@ -5,6 +5,7 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { LOAD_STATUS, LOAD_STATUS_LABELS, nextStatuses, type LoadStatus } from '@/lib/loads/lifecycle';
 import { readSnapshotCents } from '@/lib/pricing/snapshot';
 import { getOrgComplianceResults } from '@/lib/compliance/policy.server';
+import { ACCESSORIAL_TYPE, ACCESSORIAL_TYPE_LABELS, BILLABLE_TO, BILLABLE_TO_LABELS } from '@/lib/accessorials/calc';
 
 // These two steps only happen through the rate-confirmation flow
 // (sendRatecon/signRatecon) — offering them in the generic advance dropdown
@@ -29,7 +30,7 @@ function loadBadgeClass(status: LoadStatus): string {
 
 import { ActionForm } from '../_components/action-form';
 import { SubmitButton } from '../_components/submit-button';
-import { createLoadFromQuote, advanceLoadStatus } from './actions';
+import { createLoadFromQuote, advanceLoadStatus, addAccessorial } from './actions';
 
 interface LoadRow {
   id: string;
@@ -39,6 +40,11 @@ interface LoadRow {
   status: LoadStatus;
   commercial_snapshot: Record<string, unknown> | null;
   carrier_name: string | null;
+}
+
+interface AccessorialRow {
+  load_id: string;
+  amount_cents: number;
 }
 
 interface BookableQuoteRow {
@@ -75,6 +81,7 @@ export default async function LoadsPage() {
   const canCreate = can(active.role, PERMISSIONS.LOAD_CREATE);
   const canAdvance = can(active.role, PERMISSIONS.LOAD_TRANSITION);
   const canOverrideCompliance = can(active.role, PERMISSIONS.COMPLIANCE_OVERRIDE);
+  const canEditAccessorials = can(active.role, PERMISSIONS.LOAD_EDIT);
 
   const supabase = await getServerSupabase();
 
@@ -112,6 +119,25 @@ export default async function LoadsPage() {
     // submitting, rather than only after the assignment gate refuses it.
     const results = await getOrgComplianceResults(active.orgId);
     carrierCompliance = new Map(carriers.map((c) => [c.id, results.get(c.id)?.allowed ?? false]));
+  }
+
+  // Accessorials are broker-org-commercial data (same RLS shape as quotes),
+  // so this query naturally returns nothing for external roles — the
+  // showCommercials gate on the UI below is belt-and-suspenders, same
+  // reasoning as the Margin column just above it.
+  const accessorialTotals = new Map<string, { count: number; totalCents: number }>();
+  if (showCommercials) {
+    const { data: accessorialData } = await supabase
+      .from('accessorials')
+      .select('load_id, amount_cents')
+      .eq('org_id', active.orgId);
+    for (const row of (accessorialData as AccessorialRow[]) ?? []) {
+      const existing = accessorialTotals.get(row.load_id) ?? { count: 0, totalCents: 0 };
+      accessorialTotals.set(row.load_id, {
+        count: existing.count + 1,
+        totalCents: existing.totalCents + row.amount_cents,
+      });
+    }
   }
 
   return (
@@ -177,6 +203,60 @@ export default async function LoadsPage() {
         </ActionForm>
       )}
 
+      {canEditAccessorials && loads.length > 0 && (
+        <ActionForm action={addAccessorial} className="panel mt-6 p-6 space-y-4 max-w-xl">
+          <input type="hidden" name="orgId" value={active.orgId} />
+          <h2 className="font-semibold">Add an accessorial charge</h2>
+          <p className="text-xs text-muted -mt-2">
+            Detention, layover, a lumper fee, or TONU — a billable charge beyond the base rate.
+          </p>
+          <div>
+            <label className="block text-sm mb-1">Load</label>
+            <select name="loadId" required className="input">
+              <option value="">Select a load</option>
+              {loads.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.reference} · {l.origin} → {l.destination}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm mb-1">Type</label>
+              <select name="type" required className="input">
+                {Object.values(ACCESSORIAL_TYPE).map((t) => (
+                  <option key={t} value={t}>
+                    {ACCESSORIAL_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm mb-1">Billable to</label>
+              <select name="billableTo" required className="input">
+                {Object.values(BILLABLE_TO).map((b) => (
+                  <option key={b} value={b}>
+                    {BILLABLE_TO_LABELS[b]}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Amount (USD)</label>
+            <input name="amountDollars" type="number" step="0.01" min="0.01" required className="input" />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Description</label>
+            <input name="description" placeholder="e.g. 3 hrs detention at pickup" className="input" />
+          </div>
+          <SubmitButton className="btn-copper px-4 py-2" pendingLabel="Adding…">
+            Add charge
+          </SubmitButton>
+        </ActionForm>
+      )}
+
       <div className="panel mt-6 p-6">
         <h2 className="font-semibold">All loads</h2>
         <table className="mt-4 w-full text-sm">
@@ -187,6 +267,7 @@ export default async function LoadsPage() {
               <th className="pb-2">Carrier</th>
               <th className="pb-2">Status</th>
               {showCommercials && <th className="pb-2">Margin</th>}
+              {showCommercials && <th className="pb-2">Accessorials</th>}
               {canAdvance && <th className="pb-2">Advance</th>}
             </tr>
           </thead>
@@ -213,6 +294,16 @@ export default async function LoadsPage() {
                   {showCommercials && (
                     <td className="py-2">
                       {typeof margin === 'number' ? `$${(margin / 100).toFixed(2)}` : '—'}
+                    </td>
+                  )}
+                  {showCommercials && (
+                    <td className="py-2">
+                      {(() => {
+                        const totals = accessorialTotals.get(l.id);
+                        return totals
+                          ? `${totals.count} · $${(totals.totalCents / 100).toFixed(2)}`
+                          : '—';
+                      })()}
                     </td>
                   )}
                   {canAdvance && (
@@ -244,7 +335,10 @@ export default async function LoadsPage() {
             })}
             {loads.length === 0 && (
               <tr>
-                <td colSpan={showCommercials ? 5 : 4} className="py-8 text-muted text-center">
+                <td
+                  colSpan={4 + (showCommercials ? 2 : 0) + (canAdvance ? 1 : 0)}
+                  className="py-8 text-muted text-center"
+                >
                   No loads yet.
                 </td>
               </tr>
