@@ -159,7 +159,7 @@ export default async function PortalOverview() {
   const showCommercials = isInternalRole(role);
   const canViewCarriers = can(role, PERMISSIONS.CARRIER_VIEW);
 
-  let rfqFunnel: Record<string, number> = {};
+  const rfqFunnel: Record<string, number> = {};
   if (canRfq) {
     const { data } = await supabase.from('rfqs').select('status').eq('org_id', active.orgId);
     for (const row of (data as { status: string }[]) ?? []) {
@@ -167,7 +167,7 @@ export default async function PortalOverview() {
     }
   }
 
-  let loadStatusCounts: Record<string, number> = {};
+  const loadStatusCounts: Record<string, number> = {};
   if (canLoads) {
     const { data } = await supabase.from('loads_data').select('status').eq('org_id', active.orgId);
     for (const row of (data as { status: string }[]) ?? []) {
