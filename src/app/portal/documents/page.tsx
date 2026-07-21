@@ -33,6 +33,7 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   bol: 'Bill of Lading',
   pod: 'Proof of Delivery',
   receipt: 'Receipt',
+  ratecon_pdf: 'Signed Rate Confirmation',
   other: 'Other',
 };
 

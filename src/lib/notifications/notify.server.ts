@@ -26,7 +26,15 @@ async function getEmailsWithPermission(orgId: string, permission: Permission): P
   const emails: string[] = [];
   for (const holder of holders) {
     const { data: userData, error: userError } = await supabase.auth.admin.getUserById(holder.user_id);
-    if (userError || !userData.user?.email) continue;
+    if (userError || !userData.user?.email) {
+      // A membership row whose user has no reachable email is a data problem,
+      // not a normal skip — it means somebody who should have been told wasn't.
+      console.warn(
+        `notifyPermissionHolders: no email for user ${holder.user_id} (org ${orgId}, ${permission})`,
+        userError ?? null,
+      );
+      continue;
+    }
     emails.push(userData.user.email);
   }
   return emails;
@@ -45,16 +53,57 @@ export async function notifyPermissionHolders(
 ): Promise<void> {
   try {
     const emails = await getEmailsWithPermission(orgId, permission);
-    if (emails.length === 0) return;
+    if (emails.length === 0) {
+      // Nobody in the org holds the permission (or none of them have an email).
+      // Silent by design for the caller, but an operator needs to see it — the
+      // next step in the workflow now has nobody waiting on it.
+      console.warn(
+        `notifyPermissionHolders: no recipients hold ${permission} in org ${orgId} — "${content.subject}" not sent`,
+      );
+      return;
+    }
     const adapter = getNotificationAdapter();
+    if (adapter.name === 'noop') {
+      // Expected until NOTIFICATION_PROVIDER/RESEND_API_KEY are set (blocked on
+      // the open "email sender credentials" decision). Say so once per batch
+      // rather than reporting an undelivered send per recipient below — nothing
+      // is broken, the feature just isn't switched on yet.
+      console.warn(
+        `notifyPermissionHolders: no email provider configured — "${content.subject}" not sent to ${emails.length} recipient(s) (org ${orgId}, ${permission})`,
+      );
+      return;
+    }
     await Promise.all(
       emails.map((to) =>
-        adapter.sendEmail({ to, ...content }).catch(() => {
-          // Best-effort per recipient — one failed send shouldn't stop the rest.
-        }),
+        adapter
+          .sendEmail({ to, ...content })
+          .then((result) => {
+            // A provider rejection is a returned `delivered: false`, not a
+            // throw — ResendNotificationAdapter swallows a non-2xx response
+            // that way, and the noop adapter always reports undelivered. So
+            // the catch below alone would never fire for the most likely
+            // real failure: a bad API key or a rejected sender domain.
+            if (!result.delivered) {
+              console.error(
+                `notifyPermissionHolders: ${adapter.name} did not deliver to ${to} (org ${orgId}, ${permission}, "${content.subject}")`,
+              );
+            }
+          })
+          .catch((err: unknown) => {
+            // Best-effort per recipient — one failed send shouldn't stop the rest,
+            // but each failure is logged so ops can tell who was never reached.
+            console.error(
+              `notifyPermissionHolders: send threw for ${to} (org ${orgId}, ${permission}, "${content.subject}")`,
+              err,
+            );
+          }),
       ),
     );
-  } catch {
+  } catch (err) {
     // Best-effort overall — never throw into the caller's business transaction.
+    console.error(
+      `notifyPermissionHolders: could not resolve recipients for ${permission} in org ${orgId} — "${content.subject}" not sent`,
+      err,
+    );
   }
 }
