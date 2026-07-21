@@ -81,6 +81,10 @@ export default async function RateconsPage() {
   if (error) throw error;
   const ratecons = (rateconData as RateconRow[]) ?? [];
 
+  // In practice one ratecon has at most one signature, but order ascending
+  // so that IF more than one ever exists (e.g. a future re-versioning flow),
+  // the map below deterministically keeps the latest rather than whichever
+  // row the query happens to return last.
   const signatureByRatecon = new Map<string, SignatureRow>();
   if (ratecons.length > 0) {
     const { data: signatureData } = await supabase
@@ -89,7 +93,8 @@ export default async function RateconsPage() {
       .in(
         'rate_confirmation_id',
         ratecons.map((rc) => rc.id),
-      );
+      )
+      .order('signed_at', { ascending: true });
     for (const s of (signatureData as SignatureRow[]) ?? []) {
       signatureByRatecon.set(s.rate_confirmation_id, s);
     }
@@ -250,7 +255,7 @@ function RateconDocument({
         <div>
           <p className="text-xs text-muted uppercase tracking-wide">Shipment</p>
           <p className="mt-1">
-            {snapshot.origin} → {snapshot.destination}
+            {snapshot.origin ?? '—'} → {snapshot.destination ?? '—'}
           </p>
           <p className="text-xs text-muted mt-0.5">
             Pickup: {snapshot.pickup_at ? new Date(snapshot.pickup_at).toLocaleString() : '—'}
