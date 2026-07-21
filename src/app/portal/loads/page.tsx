@@ -2,7 +2,16 @@ import { getSessionContext } from '@/lib/tenant/context';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { isInternalRole } from '@/lib/rbac/roles';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { LOAD_STATUS_LABELS, nextStatuses, type LoadStatus } from '@/lib/loads/lifecycle';
+import { LOAD_STATUS, LOAD_STATUS_LABELS, nextStatuses, type LoadStatus } from '@/lib/loads/lifecycle';
+import { readSnapshotCents } from '@/lib/pricing/snapshot';
+
+// These two steps only happen through the rate-confirmation flow
+// (sendRatecon/signRatecon) — offering them in the generic advance dropdown
+// would just error (see loads/actions.ts's advanceLoadStatus guard).
+const MANAGED_ELSEWHERE = new Set<LoadStatus>([
+  LOAD_STATUS.AWAITING_CARRIER_SIGNATURE,
+  LOAD_STATUS.SIGNED_AWAITING_BROKER_RELEASE,
+]);
 import { ActionForm } from '../_components/action-form';
 import { SubmitButton } from '../_components/submit-button';
 import { createLoadFromQuote, advanceLoadStatus } from './actions';
@@ -13,7 +22,7 @@ interface LoadRow {
   origin: string;
   destination: string;
   status: LoadStatus;
-  commercial_snapshot: { margin_amount_cents?: number } | null;
+  commercial_snapshot: Record<string, unknown> | null;
   carrier_name: string | null;
 }
 
@@ -162,8 +171,12 @@ export default async function LoadsPage() {
           </thead>
           <tbody>
             {loads.map((l) => {
-              const next = nextStatuses(l.status);
-              const margin = showCommercials ? l.commercial_snapshot?.margin_amount_cents : undefined;
+              const rawNext = nextStatuses(l.status);
+              const next = rawNext.filter((s) => !MANAGED_ELSEWHERE.has(s));
+              const isManagedElsewhere = rawNext.length > 0 && next.length === 0;
+              const margin = showCommercials
+                ? readSnapshotCents(l.commercial_snapshot, 'marginAmountCents', 'margin_amount_cents')
+                : undefined;
               return (
                 <tr key={l.id} className="border-t border-line">
                   <td className="py-2">{l.reference}</td>
@@ -197,6 +210,8 @@ export default async function LoadsPage() {
                             Go
                           </SubmitButton>
                         </ActionForm>
+                      ) : isManagedElsewhere ? (
+                        <span className="text-muted text-xs">Via Rate Confirmations</span>
                       ) : (
                         <span className="text-muted text-xs">Final</span>
                       )}

@@ -142,9 +142,34 @@ project; `verify:rls` is what surfaced the `commercial_snapshot` leak that
 FMCSA adapter wiring (mock stays default), compliance UI, assignment/release
 gate end-to-end.
 
-### M5 — Rate confirmation lifecycle
-Send → carrier e-sign → broker release → driver ack. Signed PDF generation,
-notifications, document centre with real uploads.
+### M5 — Rate confirmation lifecycle  🟡 core loop done, rest not started
+- [x] `src/lib/ratecons/reference.ts` — RC-#### generator
+- [x] `0007_ratecons_reference_unique.sql`
+- [x] `/portal/ratecons` + `sendRatecon`/`signRatecon` server actions: broker
+      sends (booked → awaiting_carrier_signature), carrier signs using the
+      existing `buildSignatureEvidence()` (system-level status flips use the
+      service-role client — `ratecons_write`/`loads_write` RLS is
+      broker-org-only, so a carrier signer can never satisfy them directly),
+      load auto-advances to signed_awaiting_broker_release, which unblocks the
+      existing release-to-driver gate in `loads/actions.ts`.
+- [x] `advanceLoadStatus` now rejects `awaiting_carrier_signature` and
+      `signed_awaiting_broker_release` — those two are system-driven
+      consequences of the ratecon flow, not a generic manual advance.
+- [x] `src/lib/pricing/snapshot.ts` (`readSnapshotCents`) — `commercial_snapshot`
+      readers must tolerate both the pricing engine's camelCase
+      (`computePricing()`'s actual output, what every current writer stores)
+      and the snake_case older hand-written seed data used — this is what was
+      making the Loads page margin column silently show "—" for any
+      newly-created load.
+- [ ] Signed PDF generation, notifications, document centre with real uploads
+      — not started. "Electronic rate confirmations" as a checklist item
+      means the send→sign→release loop, which is what's done; the rest is
+      real remaining scope, not polish.
+
+Verified end-to-end in a real browser: quote → book → advance to booked →
+send rate confirmation (dispatcher) → sign (carrier) → load auto-advances →
+release to driver (dispatcher) — plus driver still blocked from
+`/portal/ratecons` entirely (no RATECON_VIEW).
 
 ### M6 — Milestones / POD / finance
 Shipper invoice with document-match engine, factoring settlement packet UI,

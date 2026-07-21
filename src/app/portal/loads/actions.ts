@@ -6,7 +6,12 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { PERMISSIONS } from '@/lib/rbac/permissions';
 import { AUDIT_ACTIONS, writeAudit } from '@/lib/audit/log';
 import { nextLoadReference } from '@/lib/loads/reference';
-import { canTransition, requiresSignedRateConfirmation, type LoadStatus } from '@/lib/loads/lifecycle';
+import {
+  canTransition,
+  requiresSignedRateConfirmation,
+  LOAD_STATUS,
+  type LoadStatus,
+} from '@/lib/loads/lifecycle';
 import { isQuoteReleasable } from '@/lib/pricing/override';
 import type { ActionResult } from '@/lib/actions/result';
 
@@ -141,6 +146,17 @@ export async function advanceLoadStatus(formData: FormData): Promise<ActionResul
   const from = row.status;
   if (!canTransition(from, to)) {
     return { ok: false, error: `Cannot move a load from "${from}" to "${to}".` };
+  }
+
+  // These two steps are system-driven consequences of the rate-confirmation
+  // flow (sendRatecon/signRatecon in portal/ratecons/actions.ts), not a
+  // generic manual advance — sending the wrong one here would flip the load's
+  // status without the rate confirmation that's supposed to accompany it.
+  if (to === LOAD_STATUS.AWAITING_CARRIER_SIGNATURE) {
+    return { ok: false, error: 'Send a rate confirmation from Rate Confirmations to advance this load.' };
+  }
+  if (to === LOAD_STATUS.SIGNED_AWAITING_BROKER_RELEASE) {
+    return { ok: false, error: 'This step happens automatically once the carrier signs the rate confirmation.' };
   }
 
   if (requiresSignedRateConfirmation(to)) {

@@ -1,0 +1,260 @@
+'use server';
+
+import { headers } from 'next/headers';
+import { revalidatePath } from 'next/cache';
+import { requirePermission } from '@/lib/auth/guard';
+import { getServerSupabase, getServiceRoleSupabase } from '@/lib/supabase/server';
+import { PERMISSIONS } from '@/lib/rbac/permissions';
+import { AUDIT_ACTIONS, writeAudit } from '@/lib/audit/log';
+import { nextRateconReference } from '@/lib/ratecons/reference';
+import { LOAD_STATUS } from '@/lib/loads/lifecycle';
+import { buildSignatureEvidence, hashDocument } from '@/lib/signatures/evidence';
+import { readSnapshotCents } from '@/lib/pricing/snapshot';
+import type { ActionResult } from '@/lib/actions/result';
+
+const UNIQUE_VIOLATION = '23505';
+const MAX_REFERENCE_ATTEMPTS = 5;
+const TEMPLATE_VERSION = 'ratecon-tmpl-v1';
+const CONSENT_TEXT_VERSION = 'consent-v1';
+
+interface BookedLoad {
+  id: string;
+  status: string;
+  carrier_id: string | null;
+  origin: string;
+  destination: string;
+  service_type: string;
+  reference: string;
+  commercial_snapshot: Record<string, unknown> | null;
+}
+
+/**
+ * FR-RC-01/06: Send a rate confirmation for a booked load. The carrier-facing
+ * content_snapshot deliberately carries only the carrier's own pay
+ * (carrier_rate_cents) — never shipper_price/margin — so this document is
+ * safe for the carrier to read in full (see loads/page.tsx's masking note).
+ */
+export async function sendRatecon(formData: FormData): Promise<ActionResult> {
+  const orgId = String(formData.get('orgId') ?? '');
+  const loadId = String(formData.get('loadId') ?? '');
+  const { ctx } = await requirePermission(orgId, PERMISSIONS.RATECON_SEND);
+
+  const supabase = await getServerSupabase();
+  const { data: load, error: loadError } = await supabase
+    .from('loads_data')
+    .select('id, status, carrier_id, origin, destination, service_type, reference, commercial_snapshot')
+    .eq('id', loadId)
+    .eq('org_id', orgId)
+    .single();
+  if (loadError) throw loadError;
+  const row = load as BookedLoad | null;
+  if (!row) return { ok: false, error: 'Load not found.' };
+  if (row.status !== LOAD_STATUS.BOOKED) {
+    return { ok: false, error: 'Only a booked load can have a rate confirmation sent.' };
+  }
+  if (!row.carrier_id) {
+    return { ok: false, error: 'Assign a carrier to this load before sending a rate confirmation.' };
+  }
+
+  const carrierRateCents = readSnapshotCents(
+    row.commercial_snapshot,
+    'carrierLinehaulCents',
+    'carrier_linehaul_cents',
+  );
+  if (typeof carrierRateCents !== 'number') {
+    return { ok: false, error: 'This load has no carrier rate on record.' };
+  }
+
+  const contentSnapshot = {
+    reference: row.reference,
+    origin: row.origin,
+    destination: row.destination,
+    service_type: row.service_type,
+    carrier_rate_cents: carrierRateCents,
+  };
+  const contentJson = JSON.stringify(contentSnapshot);
+
+  let created: { id: string; reference: string } | null = null;
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt < MAX_REFERENCE_ATTEMPTS && !created; attempt++) {
+    const { data: existing, error: existingError } = await supabase
+      .from('rate_confirmations')
+      .select('reference')
+      .eq('org_id', orgId);
+    if (existingError) throw existingError;
+
+    const reference = nextRateconReference(
+      ((existing ?? []) as { reference: string }[]).map((r) => r.reference),
+    );
+
+    const { data, error } = await supabase
+      .from('rate_confirmations')
+      .insert({
+        org_id: orgId,
+        load_id: loadId,
+        carrier_id: row.carrier_id,
+        reference,
+        version: 1,
+        template_version: TEMPLATE_VERSION,
+        status: 'sent',
+        content_snapshot: contentSnapshot,
+        content_hash: hashDocument(contentJson),
+        sent_at: new Date().toISOString(),
+      })
+      .select('id, reference')
+      .single();
+
+    if (error) {
+      if (error.code === UNIQUE_VIOLATION) {
+        lastError = error;
+        continue;
+      }
+      throw error;
+    }
+    created = data;
+  }
+  if (!created) throw lastError ?? new Error('Could not allocate a rate confirmation reference.');
+
+  const { error: loadUpdateError } = await supabase
+    .from('loads_data')
+    .update({ status: LOAD_STATUS.AWAITING_CARRIER_SIGNATURE })
+    .eq('id', loadId);
+  if (loadUpdateError) throw loadUpdateError;
+
+  await writeAudit({
+    orgId,
+    actorUserId: ctx.userId,
+    action: AUDIT_ACTIONS.RATECON_SENT,
+    entityType: 'rate_confirmation',
+    entityId: created.id,
+    after: { reference: created.reference, loadId, carrierId: row.carrier_id },
+  });
+
+  revalidatePath('/portal/ratecons');
+  revalidatePath('/portal/loads');
+  return { ok: true };
+}
+
+interface SignableRatecon {
+  id: string;
+  org_id: string;
+  load_id: string;
+  status: string;
+  version: number;
+  content_snapshot: Record<string, unknown>;
+}
+
+/**
+ * FR-RC-06/07: Carrier signs a sent rate confirmation. `rate_confirmations`
+ * and `loads` RLS write policies are broker-org-only (`ratecons_write` /
+ * `loads_write` both require app_is_member on the BROKER org), so a carrier
+ * signer can never satisfy them directly — the status flip and the load
+ * transition it triggers use the service-role client, same as writeAudit()
+ * does, only after the app layer (requirePermission + the RLS-scoped read
+ * below) has already established the signer is legitimately entitled to act
+ * on this document.
+ */
+export async function signRatecon(formData: FormData): Promise<ActionResult> {
+  const orgId = String(formData.get('orgId') ?? '');
+  const rateconId = String(formData.get('rateconId') ?? '');
+  const signerName = String(formData.get('signerName') ?? '').trim();
+  const signerTitle = String(formData.get('signerTitle') ?? '').trim() || null;
+  const consentAccepted = formData.get('consent') === 'on';
+
+  const { ctx } = await requirePermission(orgId, PERMISSIONS.RATECON_SIGN);
+
+  const supabase = await getServerSupabase();
+  const { data: ratecon, error: rateconError } = await supabase
+    .from('rate_confirmations')
+    .select('id, org_id, load_id, status, version, content_snapshot')
+    .eq('id', rateconId)
+    .single();
+  if (rateconError) throw rateconError;
+  const rc = ratecon as SignableRatecon | null;
+  // A null row here means either it doesn't exist or RLS denied it (this
+  // signer's org isn't the assigned carrier) — same message either way.
+  if (!rc) return { ok: false, error: 'Rate confirmation not found.' };
+  if (rc.status !== 'sent') {
+    return { ok: false, error: 'This rate confirmation is not awaiting a signature.' };
+  }
+
+  const requestHeaders = await headers();
+  const ipAddress = requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+  const userAgent = requestHeaders.get('user-agent');
+
+  let evidence;
+  try {
+    evidence = buildSignatureEvidence({
+      signerUserId: ctx.userId,
+      signerName,
+      signerTitle,
+      orgId: rc.org_id,
+      documentId: rc.id,
+      documentVersion: rc.version,
+      documentContent: JSON.stringify(rc.content_snapshot),
+      consentTextVersion: CONSENT_TEXT_VERSION,
+      consentAccepted,
+      ipAddress,
+      userAgent,
+      signedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Signature could not be recorded.';
+    return { ok: false, error: message };
+  }
+
+  const { error: signatureError } = await supabase.from('signatures').insert({
+    org_id: evidence.orgId,
+    rate_confirmation_id: evidence.documentId,
+    signer_user_id: evidence.signerUserId,
+    signer_name: evidence.signerName,
+    signer_title: evidence.signerTitle,
+    document_version: evidence.documentVersion,
+    document_hash: evidence.documentHash,
+    consent_text_version: evidence.consentTextVersion,
+    ip_address: evidence.ipAddress,
+    user_agent: evidence.userAgent,
+    disclaimer_version: evidence.disclaimerVersion,
+    signed_at: evidence.signedAt,
+  });
+  if (signatureError) throw signatureError;
+
+  const serviceRole = getServiceRoleSupabase();
+
+  const { error: rateconUpdateError } = await serviceRole
+    .from('rate_confirmations')
+    .update({ status: 'signed' })
+    .eq('id', rc.id);
+  if (rateconUpdateError) throw rateconUpdateError;
+
+  const { data: updatedLoad, error: loadUpdateError } = await serviceRole
+    .from('loads_data')
+    .update({ status: LOAD_STATUS.SIGNED_AWAITING_BROKER_RELEASE })
+    .eq('id', rc.load_id)
+    .eq('status', LOAD_STATUS.AWAITING_CARRIER_SIGNATURE)
+    .select('id');
+  if (loadUpdateError) throw loadUpdateError;
+  if (!updatedLoad || updatedLoad.length === 0) {
+    // The signature and rate_confirmation status are already committed —
+    // this only means the load itself moved on unexpectedly (e.g. a
+    // concurrent process). Surface it rather than pretending the release
+    // gate is now satisfied when the load's own status disagrees.
+    throw new Error(
+      `Signed rate confirmation ${rc.id}, but load ${rc.load_id} was not in ${LOAD_STATUS.AWAITING_CARRIER_SIGNATURE}.`,
+    );
+  }
+
+  await writeAudit({
+    orgId: rc.org_id,
+    actorUserId: ctx.userId,
+    action: AUDIT_ACTIONS.RATECON_SIGNED,
+    entityType: 'rate_confirmation',
+    entityId: rc.id,
+    after: { signerUserId: ctx.userId, signedAt: evidence.signedAt },
+  });
+
+  revalidatePath('/portal/ratecons');
+  revalidatePath('/portal/loads');
+  return { ok: true };
+}
