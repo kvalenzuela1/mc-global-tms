@@ -164,14 +164,14 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
             {quotes.map((q) => {
               const load = q.load_id ? loadsById.get(q.load_id) : null;
               return (
-                <li key={q.id} className="border-t border-line pt-3 text-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-medium">
+                <li key={q.id} className="table-row border-t border-line pt-3 pb-2 -mx-2 px-2 rounded-lg text-sm">
+                  <Link href={`/portal/quotes/${q.id}`} className="flex items-center justify-between gap-3">
+                    <p className="font-medium hover:text-copper-400">
                       ${(q.shipper_price_cents / 100).toFixed(2)} · margin $
                       {(q.margin_amount_cents / 100).toFixed(2)} ({(q.margin_percent * 100).toFixed(1)}%)
                     </p>
                     <span className={`badge ${quoteBadgeClass(q.status)}`}>{q.status}</span>
-                  </div>
+                  </Link>
                   {q.is_override && (
                     <p className="text-muted text-xs mt-1">Override: {q.override_reason}</p>
                   )}
