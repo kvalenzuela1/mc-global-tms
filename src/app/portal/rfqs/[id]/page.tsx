@@ -48,6 +48,25 @@ interface LoadRow {
   carrier_name: string | null;
 }
 
+/**
+ * L/W/H are optional independently (a broker may only know the length so
+ * far) — showing "123 × — × —" for a partial entry reads like missing data
+ * rather than an intentional partial measurement, so a partial fill gets
+ * explicit L/W/H labels instead of the compact "×" form.
+ */
+function formatDimensions(detail: RfqDetail): string {
+  const { length_value: l, width_value: w, height_value: h, dimension_unit: unit } = detail;
+  if (l == null && w == null && h == null) return '—';
+  if (l != null && w != null && h != null) {
+    return `${l} × ${w} × ${h} ${unit.toUpperCase()}`;
+  }
+  const parts: string[] = [];
+  if (l != null) parts.push(`L ${l}`);
+  if (w != null) parts.push(`W ${w}`);
+  if (h != null) parts.push(`H ${h}`);
+  return `${parts.join(', ')} ${unit.toUpperCase()}`;
+}
+
 function quoteBadgeClass(status: string): string {
   if (status === 'approved') return 'badge-ok';
   if (status === 'pending_approval') return 'badge-warn';
@@ -180,11 +199,7 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-muted">Dimensions (L × W × H)</dt>
-              <dd className="text-right">
-                {detail.length_value != null || detail.width_value != null || detail.height_value != null
-                  ? `${detail.length_value ?? '—'} × ${detail.width_value ?? '—'} × ${detail.height_value ?? '—'} ${detail.dimension_unit.toUpperCase()}`
-                  : '—'}
-              </dd>
+              <dd className="text-right">{formatDimensions(detail)}</dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-muted">NMFC code</dt>

@@ -7,6 +7,7 @@ import {
   isValidPackagingType,
   isValidWeightUnit,
   isValidDimensionUnit,
+  isValidNmfcCode,
   FREIGHT_CLASSES,
 } from '@/lib/rfqs/freight-detail';
 
@@ -37,5 +38,18 @@ describe('rfq freight detail', () => {
     expect(isValidDimensionUnit('in')).toBe(true);
     expect(isValidDimensionUnit('cm')).toBe(true);
     expect(isValidDimensionUnit('mm')).toBe(false);
+  });
+
+  it('FR-RFQ-03: NMFC code accepts digits/spaces/hyphens, including sub-codes, without pinning a digit count', () => {
+    expect(isValidNmfcCode('156600')).toBe(true);
+    expect(isValidNmfcCode('16030-1')).toBe(true);
+    expect(isValidNmfcCode('1234')).toBe(true);
+    expect(isValidNmfcCode('156600 01')).toBe(true);
+  });
+
+  it('FR-RFQ-03: NMFC code rejects obvious garbage', () => {
+    expect(isValidNmfcCode('abc')).toBe(false);
+    expect(isValidNmfcCode('156600!!!')).toBe(false);
+    expect(isValidNmfcCode('')).toBe(false);
   });
 });

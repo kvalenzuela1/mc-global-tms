@@ -45,3 +45,16 @@ export function isValidWeightUnit(value: string): value is WeightUnit {
 export function isValidDimensionUnit(value: string): value is DimensionUnit {
   return (DIMENSION_UNITS as readonly string[]).includes(value);
 }
+
+/**
+ * NMFC item numbers aren't a fixed digit count in practice — they range
+ * roughly 4-7 digits and often carry a sub-code suffix (e.g. "156600-01"),
+ * so this deliberately doesn't pin an exact length or reject sub-codes.
+ * It only catches obvious garbage (letters, punctuation) — digits,
+ * whitespace, and hyphens only.
+ */
+const NMFC_CODE_RE = /^[\d\s-]+$/;
+
+export function isValidNmfcCode(value: string): boolean {
+  return NMFC_CODE_RE.test(value);
+}

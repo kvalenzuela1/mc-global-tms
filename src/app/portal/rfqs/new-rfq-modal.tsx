@@ -181,7 +181,13 @@ function RfqDialog({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm mb-1">NMFC code</label>
-              <input name="nmfcCode" className="input" />
+              <input
+                name="nmfcCode"
+                placeholder="e.g. 156600 or 156600-01"
+                pattern="[\d\s-]+"
+                title="Digits, spaces, or hyphens only"
+                className="input"
+              />
             </div>
             <div>
               <label className="block text-sm mb-1">Freight class</label>

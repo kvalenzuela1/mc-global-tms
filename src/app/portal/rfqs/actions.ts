@@ -10,6 +10,7 @@ import {
   isValidWeightUnit,
   isValidDimensionUnit,
   isValidFreightClass,
+  isValidNmfcCode,
 } from '@/lib/rfqs/freight-detail';
 import type { ActionResult } from '@/lib/actions/result';
 
@@ -89,6 +90,9 @@ export async function createRfq(formData: FormData): Promise<ActionResult> {
   }
 
   const nmfcCode = String(formData.get('nmfcCode') ?? '').trim() || null;
+  if (nmfcCode && !isValidNmfcCode(nmfcCode)) {
+    return { ok: false, error: 'NMFC code should contain only digits, spaces, or hyphens.' };
+  }
 
   const freightClassRaw = formData.get('freightClass');
   const freightClass = freightClassRaw ? Number(freightClassRaw) : null;
