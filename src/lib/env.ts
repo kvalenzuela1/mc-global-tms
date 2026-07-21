@@ -16,11 +16,19 @@ function optional(name: string, fallback = ''): string {
   return process.env[name] ?? fallback;
 }
 
-/** Public (browser-safe) config. */
+/**
+ * Public (browser-safe) config. Next.js's bundler inlines `NEXT_PUBLIC_*`
+ * vars into the client bundle only when accessed as a literal
+ * `process.env.NEXT_PUBLIC_X` expression — dynamic access like
+ * `process.env[name]` (what `optional()`/`required()` do above) can't be
+ * statically replaced, so it silently reads `undefined` in the browser
+ * even though the same code works fine server-side (where `process.env` is
+ * a real object). These three must stay written out literally.
+ */
 export const publicEnv = {
-  appUrl: optional('NEXT_PUBLIC_APP_URL', 'http://localhost:3000'),
-  supabaseUrl: optional('NEXT_PUBLIC_SUPABASE_URL'),
-  supabaseAnonKey: optional('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
+  appUrl: process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000',
+  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
+  supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
 };
 
 /** Server-only config. Access ONLY in server code. */

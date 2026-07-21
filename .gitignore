@@ -39,3 +39,12 @@ yarn-error.log*
 # supabase local
 /supabase/.branches
 /supabase/.temp
+
+# cloudflare wrangler local state
+.wrangler/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# delivery package snapshots — source of truth is the repo itself
+*.zip

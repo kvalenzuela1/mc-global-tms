@@ -13,6 +13,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "setup:supabase": "node scripts/setup-supabase.mjs",
+    "verify:rls": "node scripts/verify-rls.mjs",
     "db:migrate": "node scripts/migrate.mjs",
     "db:seed": "node scripts/seed.mjs",
     "db:reset": "node scripts/migrate.mjs --reset && node scripts/seed.mjs",
@@ -20,29 +22,30 @@
     "test:watch": "vitest",
     "test:setup-db": "node scripts/test-db.mjs up",
     "test:teardown-db": "node scripts/test-db.mjs down",
-    "test:offline": "node --experimental-strip-types --import ./tests/_node/register.mjs --test tests/rbac.test.ts tests/driver-masking.test.ts tests/pricing.test.ts tests/compliance-gate.test.ts tests/signature-evidence.test.ts tests/invoice-eligibility.test.ts tests/lifecycle.test.ts",
+    "test:offline": "node --experimental-strip-types --import ./tests/_node/register.mjs --test tests/rbac.test.ts tests/driver-masking.test.ts tests/pricing.test.ts tests/pricing-override.test.ts tests/compliance-gate.test.ts tests/signature-evidence.test.ts tests/invoice-eligibility.test.ts tests/lifecycle.test.ts tests/loads-reference.test.ts tests/policy-resolver.test.ts",
     "test:db": "bash scripts/verify-db.sh"
   },
   "dependencies": {
+    "@supabase/server": "^1.4.0",
     "@supabase/ssr": "0.5.2",
-    "@supabase/supabase-js": "2.45.4",
-    "next": "15.1.6",
+    "@supabase/supabase-js": "^2.110.7",
+    "next": "^15.1.6",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "zod": "3.24.1"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "4.0.0",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "22.10.7",
     "@types/pg": "8.11.10",
     "@types/react": "19.0.7",
     "@types/react-dom": "19.0.3",
     "dotenv": "16.4.7",
-    "eslint": "9.18.0",
-    "eslint-config-next": "15.1.6",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^15.5.20",
     "pg": "8.13.1",
-    "tailwindcss": "4.0.0",
+    "tailwindcss": "^4.3.3",
     "typescript": "5.7.3",
-    "vitest": "2.1.8"
+    "vitest": "^4.1.10"
   }
 }

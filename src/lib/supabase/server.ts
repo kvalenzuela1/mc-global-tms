@@ -10,7 +10,7 @@
  */
 
 import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
+import { createServerClient, type SetAllCookies } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { publicEnv, serverEnv } from '@/lib/env';
 
@@ -20,20 +20,21 @@ import { publicEnv, serverEnv } from '@/lib/env';
  */
 export async function getServerSupabase() {
   const cookieStore = await cookies();
+  const setAll: SetAllCookies = (cookiesToSet) => {
+    try {
+      cookiesToSet.forEach(({ name, value, options }) =>
+        cookieStore.set(name, value, options),
+      );
+    } catch {
+      // Called from a Server Component; middleware refreshes the session.
+    }
+  };
   return createServerClient(publicEnv.supabaseUrl, publicEnv.supabaseAnonKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll();
       },
-      setAll(cookiesToSet) {
-        try {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options),
-          );
-        } catch {
-          // Called from a Server Component; middleware refreshes the session.
-        }
-      },
+      setAll,
     },
   });
 }

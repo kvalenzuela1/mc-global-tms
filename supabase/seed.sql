@@ -16,7 +16,7 @@
 
 -- Idempotent-ish: clear demo rows first (safe on a demo DB only).
 truncate audit_log, settlements, invoices, milestones, documents, signatures,
-         rate_confirmations, quotes, loads, rfqs, drivers, carrier_compliance,
+         rate_confirmations, quotes, loads_data, rfqs, drivers, carrier_compliance,
          carriers, shippers, policies, memberships, organizations restart identity cascade;
 
 -- Organizations --------------------------------------------------------------
@@ -91,7 +91,7 @@ insert into rfqs (id, org_id, shipper_id, service_type, origin, destination,
 -- Loads ----------------------------------------------------------------------
 -- LD-1045: booked to Horizon + driver Marcus. Status shows the signed/awaiting
 -- release step so the release-gate demo is ready.
-insert into loads (id, org_id, rfq_id, shipper_id, carrier_id, driver_id,
+insert into loads_data (id, org_id, rfq_id, shipper_id, carrier_id, driver_id,
                    service_type, reference, origin, destination, status,
                    commercial_snapshot, created_by) values
   ('88888888-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111',

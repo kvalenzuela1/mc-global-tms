@@ -18,6 +18,8 @@ export const AUDIT_ACTIONS = {
   COMPLIANCE_CHECK: 'compliance.check',
   COMPLIANCE_OVERRIDE: 'compliance.override',
   PRICING_OVERRIDE: 'pricing.override',
+  PRICING_OVERRIDE_REQUESTED: 'pricing.override_requested',
+  PRICING_OVERRIDE_APPROVED: 'pricing.override_approved',
   RATECON_SENT: 'ratecon.sent',
   RATECON_SIGNED: 'ratecon.signed',
   DRIVER_ACK: 'driver.acknowledged',

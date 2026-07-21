@@ -45,9 +45,20 @@ export async function getSessionContext(activeOrgId?: string): Promise<SessionCo
 
   if (error) throw error;
 
-  const memberships: Membership[] = (data ?? [])
-    .filter((m: { role: string }) => isValidRole(m.role))
-    .map((m: { org_id: string; role: string; organizations: { name: string } | null }) => ({
+  // supabase-js has no generated Database type here, so it can't tell this is
+  // a many-to-one embed (each membership has exactly one org) and infers
+  // `organizations` as an array; the row PostgREST actually returns is a
+  // single nullable object.
+  interface MembershipRow {
+    org_id: string;
+    role: string;
+    organizations: { name: string } | null;
+  }
+  const rows = (data ?? []) as unknown as MembershipRow[];
+
+  const memberships: Membership[] = rows
+    .filter((m) => isValidRole(m.role))
+    .map((m) => ({
       orgId: m.org_id,
       orgName: m.organizations?.name ?? 'Unknown',
       role: m.role as Role,

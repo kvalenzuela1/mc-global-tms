@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Domain logic. Runs on Node's built-in test runner with no npm dependencies,
+  # so it stays green even if the dependency tree is mid-upgrade. Fast gate.
+  # ---------------------------------------------------------------------------
+  domain-tests:
+    name: Domain logic (offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run offline test suite
+        run: npm run test:offline
+
+  # ---------------------------------------------------------------------------
+  # Typecheck + production build.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Typecheck and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Guard against the legacy app directory returning
+        # Next.js silently prefers a root `app/` over `src/app/`. If the legacy
+        # marketing site reappears, the whole TMS stops being built and every
+        # other check here would still pass. Fail loudly instead.
+        run: |
+          if [ -d app ]; then
+            echo "::error::Root ./app exists and will shadow ./src/app. It does not belong in this repo — move it out entirely."
+            exit 1
+          fi
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # Migration drift. Applies the real supabase/migrations/*.sql files (in
+  # order, via scripts/migrate.mjs — the same thing a real deploy runs) to a
+  # throwaway Postgres 16. This is what stops the repo and the live database
+  # from silently diverging: there is no separate hand-maintained file that
+  # can fall out of sync with the migrations themselves.
+  # ---------------------------------------------------------------------------
+  migrations:
+    name: Migrations apply cleanly
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mc_global_tms
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply the full migration set
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mc_global_tms
+        run: node scripts/migrate.mjs --with-auth-shim
+
+      - name: Assert loads is an RLS-respecting view
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d mc_global_tms -v ON_ERROR_STOP=1 -c "
+            do \$\$
+            declare opts text;
+            begin
+              if not exists (
+                select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace
+                where n.nspname='public' and c.relname='loads' and c.relkind='v'
+              ) then
+                raise exception 'public.loads is not a view';
+              end if;
+
+              select coalesce(array_to_string(reloptions, ','), '') into opts
+              from pg_class where relname='loads';
+
+              if opts not like '%security_invoker=true%' then
+                raise exception 'loads view is missing security_invoker=true — it would BYPASS RLS';
+              end if;
+
+              if not exists (
+                select 1 from pg_class where relname='loads_data' and relforcerowsecurity
+              ) then
+                raise exception 'loads_data does not FORCE row level security';
+              end if;
+            end
+            \$\$;"
+
+      - name: Re-apply the masking migration to prove it is idempotent
+        # 0001-0003 create bare tables and are only ever meant to run once;
+        # 0006 is deliberately written to survive a second run (guards the
+        # rename, uses create-or-replace for the function and view) — this is
+        # what setup:supabase's "safe to re-run freely" claim depends on.
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d mc_global_tms -v ON_ERROR_STOP=1 \
+            -f supabase/migrations/0006_loads_commercial_mask.sql
