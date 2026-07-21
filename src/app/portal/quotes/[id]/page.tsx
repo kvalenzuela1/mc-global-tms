@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { getSessionContext } from '@/lib/tenant/context';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { Breadcrumb } from '../../_components/breadcrumb';
+import { StatusBadge, STATUS_FACET } from '../../_components/status-badge';
 
 interface QuoteDetail {
   id: string;
@@ -29,12 +31,6 @@ interface LoadRow {
   reference: string;
   status: string;
   carrier_name: string | null;
-}
-
-function quoteBadgeClass(status: string): string {
-  if (status === 'approved') return 'badge-ok';
-  if (status === 'pending_approval') return 'badge-warn';
-  return 'badge-muted';
 }
 
 function money(cents: number): string {
@@ -86,15 +82,22 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
 
   return (
     <div>
-      {detail.rfq_id ? (
-        <Link href={`/portal/rfqs/${detail.rfq_id}`} className="text-sm text-muted hover:text-ink">
-          ← Back to RFQ
-        </Link>
-      ) : (
-        <Link href="/portal/rfqs" className="text-sm text-muted hover:text-ink">
-          ← Back to RFQs
-        </Link>
-      )}
+      <Breadcrumb
+        trail={[
+          { label: 'RFQs', href: '/portal/rfqs' },
+          ...(detail.rfq_id
+            ? [
+                {
+                  label: detail.rfqs
+                    ? `${detail.rfqs.origin} → ${detail.rfqs.destination}`
+                    : 'RFQ',
+                  href: `/portal/rfqs/${detail.rfq_id}`,
+                },
+              ]
+            : []),
+          { label: 'Quote' },
+        ]}
+      />
 
       <div className="flex items-start justify-between gap-4 mt-3">
         <div>
@@ -106,7 +109,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
             {new Date(detail.created_at).toLocaleString()}
           </p>
         </div>
-        <span className={`badge ${quoteBadgeClass(detail.status)} whitespace-nowrap`}>{detail.status}</span>
+        <StatusBadge facet={STATUS_FACET.QUOTE} value={detail.status} className="whitespace-nowrap" />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6 mt-6">

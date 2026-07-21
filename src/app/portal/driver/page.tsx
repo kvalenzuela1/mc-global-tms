@@ -1,8 +1,9 @@
 import { getSessionContext } from '@/lib/tenant/context';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { LOAD_STATUS, LOAD_STATUS_LABELS, type LoadStatus } from '@/lib/loads/lifecycle';
+import { LOAD_STATUS, type LoadStatus } from '@/lib/loads/lifecycle';
 import { ActionForm } from '../_components/action-form';
+import { StatusBadge, STATUS_FACET } from '../_components/status-badge';
 import { SubmitButton } from '../_components/submit-button';
 import { acknowledgeLoad, recordMilestone } from './actions';
 
@@ -103,7 +104,7 @@ export default async function DriverBriefPage() {
                     {l.origin} → {l.destination} · Carrier: {l.carrier_name ?? '—'}
                   </p>
                 </div>
-                <span className="badge badge-warn">{LOAD_STATUS_LABELS[l.status] ?? l.status}</span>
+                <StatusBadge facet={STATUS_FACET.LOAD} value={l.status} />
               </div>
 
               {l.status === LOAD_STATUS.RELEASED_TO_DRIVER && (

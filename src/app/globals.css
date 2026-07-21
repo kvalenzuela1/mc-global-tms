@@ -156,6 +156,12 @@ a:focus-visible,
   background: var(--color-charcoal-700);
   color: var(--color-muted);
 }
+/* Failure/blocked states. Distinct from `muted` on purpose: a suspended carrier
+   and an idle one must not look alike. See lib/ui/status-tone.ts. */
+.badge-danger {
+  background: color-mix(in srgb, var(--color-danger) 22%, transparent);
+  color: #ff9c92;
+}
 
 .avatar {
   display: inline-flex;

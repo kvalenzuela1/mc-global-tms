@@ -3,8 +3,9 @@ import { getSessionContext } from '@/lib/tenant/context';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { ROLES } from '@/lib/rbac/roles';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { RFQ_STATUS, RFQ_STATUS_LABELS, type RfqStatus } from '@/lib/rfqs/lifecycle';
+import { type RfqStatus } from '@/lib/rfqs/lifecycle';
 import { NewRfqModal } from './new-rfq-modal';
+import { StatusBadge, STATUS_FACET } from '../_components/status-badge';
 
 interface RfqRow {
   id: string;
@@ -19,12 +20,6 @@ interface RfqRow {
 interface ShipperRow {
   id: string;
   name: string;
-}
-
-function rfqBadgeClass(status: RfqStatus): string {
-  if (status === RFQ_STATUS.CLOSED) return 'badge-ok';
-  if (status === RFQ_STATUS.QUOTED) return 'badge-muted';
-  return 'badge-warn'; // open (needs a quote), booked (active load in motion)
 }
 
 export default async function RfqsPage() {
@@ -92,9 +87,7 @@ export default async function RfqsPage() {
                 </td>
                 <td className="py-2">{r.service_type}</td>
                 <td className="py-2">
-                  <span className={`badge ${rfqBadgeClass(r.status)}`}>
-                    {RFQ_STATUS_LABELS[r.status] ?? r.status}
-                  </span>
+                  <StatusBadge facet={STATUS_FACET.RFQ} value={r.status} />
                 </td>
                 <td className="py-2">{r.pickup_at ? new Date(r.pickup_at).toLocaleString() : '—'}</td>
               </tr>

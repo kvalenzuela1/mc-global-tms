@@ -3,7 +3,8 @@ import { getSessionContext } from '@/lib/tenant/context';
 import { ROLE_LABELS } from '@/lib/rbac/roles';
 import { can, permissionsFor, PERMISSIONS } from '@/lib/rbac/permissions';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { LOAD_STATUS, LOAD_STATUS_LABELS, type LoadStatus } from '@/lib/loads/lifecycle';
+import { LOAD_STATUS, type LoadStatus } from '@/lib/loads/lifecycle';
+import { StatusBadge, STATUS_FACET } from './_components/status-badge';
 
 interface PriorityLoad {
   id: string;
@@ -19,25 +20,6 @@ interface RecentRatecon {
   reference: string;
   status: string;
   content_snapshot: { origin?: string; destination?: string } | null;
-}
-
-const OK_STATUSES: LoadStatus[] = [LOAD_STATUS.DELIVERED, LOAD_STATUS.INVOICED, LOAD_STATUS.CLOSED];
-const WARN_STATUSES: LoadStatus[] = [
-  LOAD_STATUS.BOOKED,
-  LOAD_STATUS.AWAITING_CARRIER_SIGNATURE,
-  LOAD_STATUS.SIGNED_AWAITING_BROKER_RELEASE,
-];
-
-function loadBadgeClass(status: LoadStatus): string {
-  if (OK_STATUSES.includes(status)) return 'badge-ok';
-  if (WARN_STATUSES.includes(status)) return 'badge-warn';
-  return 'badge-muted';
-}
-
-function rateconBadgeClass(status: string): string {
-  if (status === 'signed') return 'badge-ok';
-  if (status === 'sent') return 'badge-warn';
-  return 'badge-muted';
 }
 
 export default async function PortalOverview() {
@@ -204,9 +186,7 @@ export default async function PortalOverview() {
                     </p>
                     <p className="text-muted text-xs mt-0.5">{l.carrier_name ?? 'No carrier assigned'}</p>
                   </div>
-                  <span className={`badge ${loadBadgeClass(l.status)}`}>
-                    {LOAD_STATUS_LABELS[l.status] ?? l.status}
-                  </span>
+                  <StatusBadge facet={STATUS_FACET.LOAD} value={l.status} />
                 </li>
               ))}
             </ul>
@@ -233,7 +213,7 @@ export default async function PortalOverview() {
                   <p className="min-w-0">
                     {rc.reference} · {rc.content_snapshot?.origin} → {rc.content_snapshot?.destination}
                   </p>
-                  <span className={`badge ${rateconBadgeClass(rc.status)}`}>{rc.status}</span>
+                  <StatusBadge facet={STATUS_FACET.RATECON} value={rc.status} />
                 </li>
               ))}
             </ul>

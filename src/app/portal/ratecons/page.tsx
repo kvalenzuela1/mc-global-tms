@@ -3,6 +3,7 @@ import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { readSnapshotCents } from '@/lib/pricing/snapshot';
 import { ActionForm } from '../_components/action-form';
+import { StatusBadge, STATUS_FACET } from '../_components/status-badge';
 import { SubmitButton } from '../_components/submit-button';
 import { sendRatecon, signRatecon } from './actions';
 
@@ -37,12 +38,6 @@ interface SignatureRow {
   signer_name: string;
   signer_title: string | null;
   signed_at: string;
-}
-
-function rateconBadgeClass(status: string): string {
-  if (status === 'signed') return 'badge-ok';
-  if (status === 'sent') return 'badge-warn';
-  return 'badge-muted';
 }
 
 export default async function RateconsPage() {
@@ -161,7 +156,7 @@ export default async function RateconsPage() {
                     ? ` · $${(rc.content_snapshot.carrier_rate_cents / 100).toFixed(2)}`
                     : ''}
                 </p>
-                <span className={`badge ${rateconBadgeClass(rc.status)}`}>{rc.status}</span>
+                <StatusBadge facet={STATUS_FACET.RATECON} value={rc.status} />
               </div>
 
               <RateconDocument snapshot={rc.content_snapshot} reference={rc.reference} signature={signatureByRatecon.get(rc.id)} />
