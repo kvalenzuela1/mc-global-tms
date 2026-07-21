@@ -1,10 +1,14 @@
 import Link from 'next/link';
 import { getSessionContext } from '@/lib/tenant/context';
-import { ROLE_LABELS } from '@/lib/rbac/roles';
+import { ROLE_LABELS, isInternalRole } from '@/lib/rbac/roles';
 import { can, permissionsFor, PERMISSIONS } from '@/lib/rbac/permissions';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { LOAD_STATUS, type LoadStatus } from '@/lib/loads/lifecycle';
+import { LOAD_STATUS, LOAD_STATUS_LABELS, LOAD_STATUS_SEQUENCE, type LoadStatus } from '@/lib/loads/lifecycle';
+import { RFQ_STATUS_LABELS, RFQ_STATUS_SEQUENCE, type RfqStatus } from '@/lib/rfqs/lifecycle';
+import { ACCESSORIAL_TYPE_LABELS, type AccessorialType } from '@/lib/accessorials/calc';
+import { getOrgComplianceResults } from '@/lib/compliance/policy.server';
 import { StatusBadge, STATUS_FACET } from './_components/status-badge';
+import { badgeClassFor } from '@/lib/ui/status-tone';
 
 interface PriorityLoad {
   id: string;
@@ -129,6 +133,61 @@ export default async function PortalOverview() {
     recentRatecons = (data as RecentRatecon[]) ?? [];
   }
 
+  // FR-KPI-01: operations snapshot — RFQ funnel, load-status breakdown,
+  // accessorial exceptions (30d), carrier compliance. Read-only rollups off
+  // data that already exists; no new mutations. Dollar figures and carrier
+  // compliance are gated the same way the rest of the portal already gates
+  // commercial/compliance visibility (showCommercials / CARRIER_VIEW), not a
+  // new permission.
+  const showCommercials = isInternalRole(role);
+  const canViewCarriers = can(role, PERMISSIONS.CARRIER_VIEW);
+
+  const rfqFunnel: Record<string, number> = {};
+  if (canRfq) {
+    const { data } = await supabase.from('rfqs').select('status').eq('org_id', active.orgId);
+    for (const row of (data as { status: string }[]) ?? []) {
+      rfqFunnel[row.status] = (rfqFunnel[row.status] ?? 0) + 1;
+    }
+  }
+
+  const loadStatusCounts: Record<string, number> = {};
+  if (canLoads) {
+    const { data } = await supabase.from('loads_data').select('status').eq('org_id', active.orgId);
+    for (const row of (data as { status: string }[]) ?? []) {
+      loadStatusCounts[row.status] = (loadStatusCounts[row.status] ?? 0) + 1;
+    }
+  }
+
+  let accessorialBreakdown: { type: AccessorialType; count: number; totalCents: number }[] = [];
+  if (showCommercials) {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { data } = await supabase
+      .from('accessorials')
+      .select('type, amount_cents')
+      .eq('org_id', active.orgId)
+      .gte('created_at', thirtyDaysAgo);
+    const byType = new Map<AccessorialType, { count: number; totalCents: number }>();
+    for (const row of (data as { type: AccessorialType; amount_cents: number }[]) ?? []) {
+      const existing = byType.get(row.type) ?? { count: 0, totalCents: 0 };
+      byType.set(row.type, { count: existing.count + 1, totalCents: existing.totalCents + row.amount_cents });
+    }
+    accessorialBreakdown = Array.from(byType.entries()).map(([type, v]) => ({ type, ...v }));
+  }
+
+  let carrierCompliance: { compliant: number; blocked: number } | null = null;
+  if (canViewCarriers) {
+    const results = await getOrgComplianceResults(active.orgId);
+    let compliant = 0;
+    let blocked = 0;
+    for (const result of results.values()) {
+      if (result?.allowed) compliant++;
+      else blocked++;
+    }
+    carrierCompliance = { compliant, blocked };
+  }
+
+  const hasOpsSnapshot = canRfq || canLoads || showCommercials || canViewCarriers;
+
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'long',
@@ -220,6 +279,84 @@ export default async function PortalOverview() {
           </div>
         )}
       </div>
+
+      {hasOpsSnapshot && (
+        <div className="panel p-6 mt-6">
+          <h2 className="font-semibold">Operations at a glance</h2>
+          <p className="text-xs text-muted mt-1">Last 30 days where noted · read-only rollup</p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-4">
+            {canRfq && (
+              <div>
+                <p className="text-xs text-muted uppercase tracking-wide">RFQ funnel</p>
+                <dl className="mt-2 space-y-1 text-sm">
+                  {RFQ_STATUS_SEQUENCE.map((status: RfqStatus) => (
+                    <div key={status} className="flex justify-between gap-3">
+                      <dt className="text-muted">{RFQ_STATUS_LABELS[status]}</dt>
+                      <dd className="tabular-nums">{rfqFunnel[status] ?? 0}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
+
+            {canLoads && (
+              <div>
+                <p className="text-xs text-muted uppercase tracking-wide">Loads by status</p>
+                <dl className="mt-2 space-y-1 text-sm">
+                  {LOAD_STATUS_SEQUENCE.filter((status) => (loadStatusCounts[status] ?? 0) > 0).map((status) => (
+                    <div key={status} className="flex justify-between gap-3">
+                      <dt className="text-muted">{LOAD_STATUS_LABELS[status]}</dt>
+                      <dd className="tabular-nums">{loadStatusCounts[status]}</dd>
+                    </div>
+                  ))}
+                  {Object.keys(loadStatusCounts).length === 0 && <p className="text-muted">No loads yet.</p>}
+                </dl>
+              </div>
+            )}
+
+            {showCommercials && (
+              <div>
+                <p className="text-xs text-muted uppercase tracking-wide">Accessorial exceptions</p>
+                <dl className="mt-2 space-y-1 text-sm">
+                  {accessorialBreakdown.map((row) => (
+                    <div key={row.type} className="flex justify-between gap-3">
+                      <dt className="text-muted">{ACCESSORIAL_TYPE_LABELS[row.type]}</dt>
+                      <dd className="tabular-nums">
+                        {row.count} · ${(row.totalCents / 100).toFixed(2)}
+                      </dd>
+                    </div>
+                  ))}
+                  {accessorialBreakdown.length === 0 && <p className="text-muted">None in the last 30 days.</p>}
+                </dl>
+              </div>
+            )}
+
+            {canViewCarriers && carrierCompliance && (
+              <div>
+                <p className="text-xs text-muted uppercase tracking-wide">Carrier compliance</p>
+                <dl className="mt-2 space-y-1 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted">Compliant</dt>
+                    <dd className="tabular-nums">
+                      <span className={badgeClassFor(STATUS_FACET.COMPLIANCE, 'compliant')}>
+                        {carrierCompliance.compliant}
+                      </span>
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted">Blocked</dt>
+                    <dd className="tabular-nums">
+                      <span className={badgeClassFor(STATUS_FACET.COMPLIANCE, 'blocked')}>
+                        {carrierCompliance.blocked}
+                      </span>
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
