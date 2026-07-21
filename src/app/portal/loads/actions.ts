@@ -18,6 +18,8 @@ import { evaluateComplianceOverride } from '@/lib/compliance/override';
 import type { ComplianceResult } from '@/lib/compliance/gate';
 import { RFQ_STATUS } from '@/lib/rfqs/lifecycle';
 import { validateAccessorial } from '@/lib/accessorials/calc';
+import { notifyPermissionHolders } from '@/lib/notifications/notify.server';
+import { loadBookedReadyForRateconEmail, loadDeliveredReadyToInvoiceEmail } from '@/lib/notifications/templates';
 import type { ActionResult } from '@/lib/actions/result';
 
 const NOT_REVIEWED_RESULT: ComplianceResult = {
@@ -188,12 +190,33 @@ export async function createLoadFromQuote(formData: FormData): Promise<ActionRes
     });
   }
 
+  // FR-NOTIF-01: booking a load is what makes sending a rate confirmation the
+  // next real step — tell whoever can send one, rather than leaving it to be
+  // noticed on the Loads page.
+  let carrierName = 'the assigned carrier';
+  if (carrierId) {
+    const { data: carrier } = await supabase.from('carriers').select('name').eq('id', carrierId).maybeSingle();
+    if (carrier) carrierName = carrier.name;
+  }
+  await notifyPermissionHolders(
+    orgId,
+    PERMISSIONS.RATECON_SEND,
+    loadBookedReadyForRateconEmail({
+      loadReference: created.reference,
+      lane: `${origin} → ${destination}`,
+      carrierName,
+    }),
+  );
+
   revalidatePath('/portal/loads');
   return { ok: true };
 }
 
 interface LoadRow {
   id: string;
+  reference: string;
+  origin: string;
+  destination: string;
   status: LoadStatus;
   carrier_id: string | null;
   rfq_id: string | null;
@@ -210,7 +233,7 @@ export async function advanceLoadStatus(formData: FormData): Promise<ActionResul
   const supabase = await getServerSupabase();
   const { data: load, error: loadError } = await supabase
     .from('loads_data')
-    .select('id, status, carrier_id, rfq_id')
+    .select('id, reference, origin, destination, status, carrier_id, rfq_id')
     .eq('id', loadId)
     .eq('org_id', orgId)
     .single();
@@ -303,6 +326,20 @@ export async function advanceLoadStatus(formData: FormData): Promise<ActionResul
     before: { status: from },
     after: { status: to },
   });
+
+  // FR-NOTIF-01: delivered is what makes invoicing the next real step —
+  // tell whoever can create an invoice, rather than leaving it to be
+  // noticed later.
+  if (to === LOAD_STATUS.DELIVERED) {
+    await notifyPermissionHolders(
+      orgId,
+      PERMISSIONS.INVOICE_CREATE,
+      loadDeliveredReadyToInvoiceEmail({
+        loadReference: row.reference,
+        lane: `${row.origin} → ${row.destination}`,
+      }),
+    );
+  }
 
   revalidatePath('/portal/loads');
   return { ok: true };
