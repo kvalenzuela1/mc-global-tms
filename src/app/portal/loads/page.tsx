@@ -125,7 +125,7 @@ export default async function LoadsPage() {
   // so this query naturally returns nothing for external roles — the
   // showCommercials gate on the UI below is belt-and-suspenders, same
   // reasoning as the Margin column just above it.
-  let accessorialTotals = new Map<string, { count: number; totalCents: number }>();
+  const accessorialTotals = new Map<string, { count: number; totalCents: number }>();
   if (showCommercials) {
     const { data: accessorialData } = await supabase
       .from('accessorials')
