@@ -21,6 +21,7 @@ interface BookedLoad {
   id: string;
   status: string;
   carrier_id: string | null;
+  rfq_id: string | null;
   origin: string;
   destination: string;
   service_type: string;
@@ -33,6 +34,14 @@ interface BookedLoad {
  * content_snapshot deliberately carries only the carrier's own pay
  * (carrier_rate_cents) — never shipper_price/margin — so this document is
  * safe for the carrier to read in full (see loads/page.tsx's masking note).
+ *
+ * The snapshot's broker/carrier identity and shipment fields follow the
+ * standard industry rate-confirmation layout (company + MC/DOT numbers on
+ * both sides, lane, equipment/freight, pickup) — captured once at send time
+ * per FR-SNAP-01's "immutable snapshot" convention, same as
+ * loads.commercial_snapshot. Payment terms beyond the linehaul rate (Quick
+ * Pay %, factoring language) are an open client decision (see CLAUDE.md) and
+ * deliberately not included here.
  */
 export async function sendRatecon(formData: FormData): Promise<ActionResult> {
   const orgId = String(formData.get('orgId') ?? '');
@@ -42,7 +51,7 @@ export async function sendRatecon(formData: FormData): Promise<ActionResult> {
   const supabase = await getServerSupabase();
   const { data: load, error: loadError } = await supabase
     .from('loads_data')
-    .select('id, status, carrier_id, origin, destination, service_type, reference, commercial_snapshot')
+    .select('id, status, carrier_id, rfq_id, origin, destination, service_type, reference, commercial_snapshot')
     .eq('id', loadId)
     .eq('org_id', orgId)
     .single();
@@ -65,12 +74,50 @@ export async function sendRatecon(formData: FormData): Promise<ActionResult> {
     return { ok: false, error: 'This load has no carrier rate on record.' };
   }
 
+  const { data: broker, error: brokerError } = await supabase
+    .from('organizations')
+    .select('name, mc_number, dot_number')
+    .eq('id', orgId)
+    .single();
+  if (brokerError) throw brokerError;
+
+  const { data: carrier, error: carrierError } = await supabase
+    .from('carriers')
+    .select('name, mc_number, dot_number')
+    .eq('id', row.carrier_id)
+    .single();
+  if (carrierError) throw carrierError;
+
+  let freightDetails: string | null = null;
+  let pickupAt: string | null = null;
+  if (row.rfq_id) {
+    const { data: rfq } = await supabase
+      .from('rfqs')
+      .select('freight_details, pickup_at')
+      .eq('id', row.rfq_id)
+      .maybeSingle();
+    freightDetails = (rfq as { freight_details: string | null } | null)?.freight_details ?? null;
+    pickupAt = (rfq as { pickup_at: string | null } | null)?.pickup_at ?? null;
+  }
+
   const contentSnapshot = {
     reference: row.reference,
     origin: row.origin,
     destination: row.destination,
     service_type: row.service_type,
     carrier_rate_cents: carrierRateCents,
+    broker: {
+      name: broker.name,
+      mc_number: broker.mc_number as string | null,
+      dot_number: broker.dot_number as string | null,
+    },
+    carrier: {
+      name: carrier.name,
+      mc_number: carrier.mc_number as string | null,
+      dot_number: carrier.dot_number as string,
+    },
+    freight_details: freightDetails,
+    pickup_at: pickupAt,
   };
   const contentJson = JSON.stringify(contentSnapshot);
 

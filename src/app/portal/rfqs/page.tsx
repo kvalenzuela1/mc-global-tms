@@ -1,5 +1,6 @@
 import { getSessionContext } from '@/lib/tenant/context';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
+import { ROLES } from '@/lib/rbac/roles';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { RFQ_STATUS, RFQ_STATUS_LABELS, type RfqStatus } from '@/lib/rfqs/lifecycle';
 import { NewRfqModal } from './new-rfq-modal';
@@ -30,21 +31,25 @@ export default async function RfqsPage() {
   const active = ctx?.active ?? ctx?.memberships[0] ?? null;
   if (!active) return null;
 
-  if (!can(active.role, PERMISSIONS.RFQ_VIEW)) {
+  if (!can(active.role, PERMISSIONS.RFQ_VIEW) && !can(active.role, PERMISSIONS.RFQ_CREATE)) {
     return <NotAuthorized />;
   }
 
   const supabase = await getServerSupabase();
+  // No org_id filter: for a shipper, active.orgId is THEIR own org, not the
+  // broker tenant rfqs.org_id stores — RLS's app_shipper_user_can_access
+  // carve-out scopes it correctly instead (same "let RLS scope it" pattern
+  // as loads/page.tsx).
   const { data: rfqs, error } = await supabase
     .from('rfqs')
     .select('id, origin, destination, service_type, status, freight_details, pickup_at')
-    .eq('org_id', active.orgId)
     .order('created_at', { ascending: false });
   if (error) throw error;
 
   const canCreate = can(active.role, PERMISSIONS.RFQ_CREATE);
+  const isShipper = active.role === ROLES.SHIPPER;
   let shippers: ShipperRow[] = [];
-  if (canCreate) {
+  if (canCreate && !isShipper) {
     const { data } = await supabase
       .from('shippers')
       .select('id, name')
@@ -60,7 +65,9 @@ export default async function RfqsPage() {
           <h1 className="text-2xl font-bold">RFQs & Quotes</h1>
           <p className="text-muted mt-1">Requests for quote from shippers.</p>
         </div>
-        {canCreate && <NewRfqModal orgId={active.orgId} shippers={shippers} />}
+        {canCreate && (
+          <NewRfqModal orgId={active.orgId} shippers={shippers} hideShipperField={isShipper} />
+        )}
       </div>
 
       <div className="panel mt-6 p-6">

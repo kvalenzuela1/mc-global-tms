@@ -58,7 +58,7 @@ export default async function LoadsPage() {
   const active = ctx?.active ?? ctx?.memberships[0] ?? null;
   if (!active) return null;
 
-  if (!can(active.role, PERMISSIONS.LOAD_VIEW)) {
+  if (!can(active.role, PERMISSIONS.LOAD_VIEW) && !can(active.role, PERMISSIONS.SHIPPER_TRACK)) {
     return <NotAuthorized />;
   }
 
