@@ -63,16 +63,40 @@ export async function notifyPermissionHolders(
       return;
     }
     const adapter = getNotificationAdapter();
+    if (adapter.name === 'noop') {
+      // Expected until NOTIFICATION_PROVIDER/RESEND_API_KEY are set (blocked on
+      // the open "email sender credentials" decision). Say so once per batch
+      // rather than reporting an undelivered send per recipient below — nothing
+      // is broken, the feature just isn't switched on yet.
+      console.warn(
+        `notifyPermissionHolders: no email provider configured — "${content.subject}" not sent to ${emails.length} recipient(s) (org ${orgId}, ${permission})`,
+      );
+      return;
+    }
     await Promise.all(
       emails.map((to) =>
-        adapter.sendEmail({ to, ...content }).catch((err: unknown) => {
-          // Best-effort per recipient — one failed send shouldn't stop the rest,
-          // but each failure is logged so ops can tell who was never reached.
-          console.error(
-            `notifyPermissionHolders: send failed to ${to} (org ${orgId}, ${permission}, "${content.subject}")`,
-            err,
-          );
-        }),
+        adapter
+          .sendEmail({ to, ...content })
+          .then((result) => {
+            // A provider rejection is a returned `delivered: false`, not a
+            // throw — ResendNotificationAdapter swallows a non-2xx response
+            // that way, and the noop adapter always reports undelivered. So
+            // the catch below alone would never fire for the most likely
+            // real failure: a bad API key or a rejected sender domain.
+            if (!result.delivered) {
+              console.error(
+                `notifyPermissionHolders: ${adapter.name} did not deliver to ${to} (org ${orgId}, ${permission}, "${content.subject}")`,
+              );
+            }
+          })
+          .catch((err: unknown) => {
+            // Best-effort per recipient — one failed send shouldn't stop the rest,
+            // but each failure is logged so ops can tell who was never reached.
+            console.error(
+              `notifyPermissionHolders: send threw for ${to} (org ${orgId}, ${permission}, "${content.subject}")`,
+              err,
+            );
+          }),
       ),
     );
   } catch (err) {
