@@ -4,6 +4,7 @@ import { isInternalRole } from '@/lib/rbac/roles';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { LOAD_STATUS, LOAD_STATUS_LABELS, nextStatuses, type LoadStatus } from '@/lib/loads/lifecycle';
 import { readSnapshotCents } from '@/lib/pricing/snapshot';
+import { getOrgComplianceResults } from '@/lib/compliance/policy.server';
 
 // These two steps only happen through the rate-confirmation flow
 // (sendRatecon/signRatecon) — offering them in the generic advance dropdown
@@ -12,6 +13,20 @@ const MANAGED_ELSEWHERE = new Set<LoadStatus>([
   LOAD_STATUS.AWAITING_CARRIER_SIGNATURE,
   LOAD_STATUS.SIGNED_AWAITING_BROKER_RELEASE,
 ]);
+
+const OK_STATUSES: LoadStatus[] = [LOAD_STATUS.DELIVERED, LOAD_STATUS.INVOICED, LOAD_STATUS.CLOSED];
+const WARN_STATUSES: LoadStatus[] = [
+  LOAD_STATUS.BOOKED,
+  LOAD_STATUS.AWAITING_CARRIER_SIGNATURE,
+  LOAD_STATUS.SIGNED_AWAITING_BROKER_RELEASE,
+];
+
+function loadBadgeClass(status: LoadStatus): string {
+  if (OK_STATUSES.includes(status)) return 'badge-ok';
+  if (WARN_STATUSES.includes(status)) return 'badge-warn';
+  return 'badge-muted';
+}
+
 import { ActionForm } from '../_components/action-form';
 import { SubmitButton } from '../_components/submit-button';
 import { createLoadFromQuote, advanceLoadStatus } from './actions';
@@ -59,6 +74,7 @@ export default async function LoadsPage() {
   const showCommercials = isInternalRole(active.role);
   const canCreate = can(active.role, PERMISSIONS.LOAD_CREATE);
   const canAdvance = can(active.role, PERMISSIONS.LOAD_TRANSITION);
+  const canOverrideCompliance = can(active.role, PERMISSIONS.COMPLIANCE_OVERRIDE);
 
   const supabase = await getServerSupabase();
 
@@ -75,6 +91,7 @@ export default async function LoadsPage() {
 
   let bookableQuotes: BookableQuoteRow[] = [];
   let carriers: CarrierRow[] = [];
+  let carrierCompliance = new Map<string, boolean>();
   if (canCreate) {
     const { data: quoteData } = await supabase
       .from('quotes')
@@ -90,6 +107,11 @@ export default async function LoadsPage() {
       .eq('org_id', active.orgId)
       .order('name');
     carriers = (carrierData as CarrierRow[]) ?? [];
+
+    // Annotate the dropdown so a broker sees a blocked carrier before
+    // submitting, rather than only after the assignment gate refuses it.
+    const results = await getOrgComplianceResults(active.orgId);
+    carrierCompliance = new Map(carriers.map((c) => [c.id, results.get(c.id)?.allowed ?? false]));
   }
 
   return (
@@ -103,11 +125,7 @@ export default async function LoadsPage() {
           <h2 className="font-semibold">Book a load from an approved quote</h2>
           <div>
             <label className="block text-sm mb-1">Quote</label>
-            <select
-              name="quoteId"
-              required
-              className="w-full rounded-lg bg-charcoal-800 border border-line px-3 py-2"
-            >
+            <select name="quoteId" required className="input">
               <option value="">Select an approved, unbooked quote</option>
               {bookableQuotes.map((q) => (
                 <option key={q.id} value={q.id}>
@@ -119,15 +137,12 @@ export default async function LoadsPage() {
           </div>
           <div>
             <label className="block text-sm mb-1">Carrier</label>
-            <select
-              name="carrierId"
-              required
-              className="w-full rounded-lg bg-charcoal-800 border border-line px-3 py-2"
-            >
+            <select name="carrierId" required className="input">
               <option value="">Select a carrier</option>
               {carriers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
+                  {carrierCompliance.get(c.id) ? '' : ' — blocked (see Carrier Compliance)'}
                 </option>
               ))}
             </select>
@@ -135,21 +150,27 @@ export default async function LoadsPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm mb-1">Origin</label>
-              <input
-                name="origin"
-                required
-                className="w-full rounded-lg bg-charcoal-800 border border-line px-3 py-2"
-              />
+              <input name="origin" required className="input" />
             </div>
             <div>
               <label className="block text-sm mb-1">Destination</label>
-              <input
-                name="destination"
-                required
-                className="w-full rounded-lg bg-charcoal-800 border border-line px-3 py-2"
-              />
+              <input name="destination" required className="input" />
             </div>
           </div>
+          {canOverrideCompliance && (
+            <div className="rounded-lg border border-line p-3 space-y-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="complianceOverride" />
+                Override a blocked carrier&apos;s compliance status
+              </label>
+              <textarea
+                name="complianceOverrideReason"
+                rows={2}
+                placeholder="Required if overriding — why is this carrier acceptable anyway?"
+                className="input text-sm"
+              />
+            </div>
+          )}
           <SubmitButton className="btn-copper px-4 py-2" pendingLabel="Booking…">
             Create load
           </SubmitButton>
@@ -160,7 +181,7 @@ export default async function LoadsPage() {
         <h2 className="font-semibold">All loads</h2>
         <table className="mt-4 w-full text-sm">
           <thead className="text-muted text-left">
-            <tr>
+            <tr className="border-b border-line">
               <th className="pb-2">Reference</th>
               <th className="pb-2">Lane</th>
               <th className="pb-2">Carrier</th>
@@ -178,13 +199,17 @@ export default async function LoadsPage() {
                 ? readSnapshotCents(l.commercial_snapshot, 'marginAmountCents', 'margin_amount_cents')
                 : undefined;
               return (
-                <tr key={l.id} className="border-t border-line">
+                <tr key={l.id} className="table-row border-t border-line">
                   <td className="py-2">{l.reference}</td>
                   <td className="py-2">
                     {l.origin} → {l.destination}
                   </td>
                   <td className="py-2">{l.carrier_name ?? '—'}</td>
-                  <td className="py-2">{LOAD_STATUS_LABELS[l.status] ?? l.status}</td>
+                  <td className="py-2">
+                    <span className={`badge ${loadBadgeClass(l.status)}`}>
+                      {LOAD_STATUS_LABELS[l.status] ?? l.status}
+                    </span>
+                  </td>
                   {showCommercials && (
                     <td className="py-2">
                       {typeof margin === 'number' ? `$${(margin / 100).toFixed(2)}` : '—'}
@@ -196,10 +221,7 @@ export default async function LoadsPage() {
                         <ActionForm action={advanceLoadStatus} className="inline-flex items-center gap-2">
                           <input type="hidden" name="orgId" value={active.orgId} />
                           <input type="hidden" name="loadId" value={l.id} />
-                          <select
-                            name="to"
-                            className="rounded-md bg-charcoal-800 border border-line px-2 py-1 text-xs"
-                          >
+                          <select name="to" className="input py-1 text-xs">
                             {next.map((s) => (
                               <option key={s} value={s}>
                                 {LOAD_STATUS_LABELS[s]}
@@ -222,7 +244,7 @@ export default async function LoadsPage() {
             })}
             {loads.length === 0 && (
               <tr>
-                <td colSpan={showCommercials ? 5 : 4} className="py-4 text-muted">
+                <td colSpan={showCommercials ? 5 : 4} className="py-8 text-muted text-center">
                   No loads yet.
                 </td>
               </tr>

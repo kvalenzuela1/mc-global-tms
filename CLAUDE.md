@@ -138,9 +138,34 @@ Verified: 77 offline tests green; all six migrations applied to the live
 project; `verify:rls` is what surfaced the `commercial_snapshot` leak that
 0006 fixes.
 
-### M4 — Carrier compliance  ← current
-FMCSA adapter wiring (mock stays default), compliance UI, assignment/release
-gate end-to-end.
+### M4 — Carrier compliance  ✅ complete
+- [x] `src/lib/compliance/override.ts` — maker/checker N/A (only `org_admin`
+      holds `COMPLIANCE_OVERRIDE`), mirrors `pricing/override.ts`'s shape.
+- [x] `src/lib/compliance/policy.server.ts` — `getCarrierComplianceResult`/
+      `getOrgComplianceResults`, wiring `evaluateCarrierCompliance` (built in
+      M1/M2, zero callers until now) to real `carrier_compliance` data +
+      org compliance thresholds via `policy-resolver.ts`'s
+      `resolveComplianceThresholds` (same platform→org→exception pattern as
+      pricing config).
+- [x] `/portal/carriers` — add a carrier, Approve/Suspend/Reject
+      (`carriers.status`, independent of the detailed gate on purpose),
+      FMCSA refresh (`getFmcsaAdapter()`, also zero callers until now), manual
+      compliance review form. `carrier_compliance` stays append-only, same
+      "no `is_current` flag, latest row wins" convention it already had.
+- [x] Assignment gate (`createLoadFromQuote`): blocks a non-compliant carrier
+      unless `org_admin` overrides with a reason (audited,
+      `AUDIT_ACTIONS.COMPLIANCE_OVERRIDE`). Release gate
+      (`advanceLoadStatus` → `released_to_driver`): hard, non-overridable —
+      a booking-time override does not carry forward. Verified independently:
+      a load booked via override with a signed rate confirmation on file
+      still gets refused at release because the carrier is still
+      non-compliant.
+- [x] Carrier dropdown on `/portal/loads` annotated with compliance status
+      before submission, not just after the gate refuses it.
+
+No schema changes — `carriers`/`carrier_compliance` already had every column
+needed; this was purely wiring already-built, already-tested pure logic to
+real data and real UI.
 
 ### M5 — Rate confirmation lifecycle  🟡 core loop done, rest not started
 - [x] `src/lib/ratecons/reference.ts` — RC-#### generator

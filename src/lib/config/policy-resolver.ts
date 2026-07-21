@@ -10,6 +10,7 @@
  */
 
 import type { PricingConfig } from '@/lib/pricing/calc';
+import type { ComplianceThresholds } from '@/lib/compliance/gate';
 
 export type PolicyScope = 'platform' | 'organization' | 'exception';
 
@@ -64,6 +65,13 @@ function numberOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
+function numberArrayOr(value: unknown, fallback: number[]): number[] {
+  if (Array.isArray(value) && value.every((v) => typeof v === 'number' && Number.isFinite(v))) {
+    return value;
+  }
+  return fallback;
+}
+
 /**
  * Resolve the `pricing` policy key into a `PricingConfig`, falling back to
  * `fallback` (normally `DEFAULT_PRICING_CONFIG`) field-by-field when a value
@@ -80,5 +88,23 @@ export function resolvePricingConfig(
     targetMarginPercent: numberOr(value.target_margin_percent, fallback.targetMarginPercent),
     quickPayFeePercent: numberOr(value.quick_pay_fee_percent, fallback.quickPayFeePercent),
     factoringCostPercent: numberOr(value.factoring_cost_percent, fallback.factoringCostPercent),
+  };
+}
+
+/**
+ * Resolve the `compliance` policy key into `ComplianceThresholds`, falling
+ * back to `fallback` (normally `DEFAULT_COMPLIANCE_THRESHOLDS`) field-by-field.
+ */
+export function resolveComplianceThresholds(
+  rows: PolicyRow[],
+  fallback: ComplianceThresholds,
+  now: string = new Date().toISOString(),
+): ComplianceThresholds {
+  const value = resolvePolicyValue(rows, 'compliance', now);
+  if (!value) return fallback;
+  return {
+    minAutoLiabilityCents: numberOr(value.min_auto_liability_cents, fallback.minAutoLiabilityCents),
+    minCargoCents: numberOr(value.min_cargo_cents, fallback.minCargoCents),
+    warnDays: numberArrayOr(value.warn_days, fallback.warnDays),
   };
 }

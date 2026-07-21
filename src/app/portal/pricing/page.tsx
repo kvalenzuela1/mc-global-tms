@@ -71,10 +71,7 @@ export default async function PricingPage() {
         <input type="hidden" name="orgId" value={active.orgId} />
         <div>
           <label className="block text-sm mb-1">Link to RFQ (optional)</label>
-          <select
-            name="rfqId"
-            className="w-full rounded-lg bg-charcoal-800 border border-line px-3 py-2"
-          >
+          <select name="rfqId" className="input">
             <option value="">— None —</option>
             {rfqs.map((r) => (
               <option key={r.id} value={r.id}>
@@ -91,18 +88,14 @@ export default async function PricingPage() {
             step="0.01"
             min="0"
             required
-            className="w-full rounded-lg bg-charcoal-800 border border-line px-3 py-2"
+            className="input"
           />
         </div>
         <div>
           <label className="block text-sm mb-1">
             Override justification <span className="text-muted">(required only if the quote breaches policy)</span>
           </label>
-          <textarea
-            name="reason"
-            rows={2}
-            className="w-full rounded-lg bg-charcoal-800 border border-line px-3 py-2"
-          />
+          <textarea name="reason" rows={2} className="input" />
         </div>
         <SubmitButton className="btn-copper px-4 py-2" pendingLabel="Calculating…">
           Quote it
@@ -117,7 +110,7 @@ export default async function PricingPage() {
             {pending.map((q) => {
               const isOwnRequest = q.override_requested_by === ctx?.userId;
               return (
-                <li key={q.id} className="border-t border-line pt-4 text-sm">
+                <li key={q.id} className="table-row border-t border-line pt-4 pb-2 -mx-2 px-2 rounded-lg text-sm">
                   <p>
                     Shipper price ${(q.shipper_price_cents / 100).toFixed(2)} · margin $
                     {(q.margin_amount_cents / 100).toFixed(2)} ({(q.margin_percent * 100).toFixed(1)}%)

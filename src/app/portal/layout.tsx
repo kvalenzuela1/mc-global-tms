@@ -45,7 +45,7 @@ export default async function PortalLayout({
 
   return (
     <div className="min-h-screen grid grid-cols-[260px_1fr]">
-      <aside className="bg-charcoal-900 border-r border-line p-5 flex flex-col">
+      <aside className="bg-charcoal-900 border-r border-line p-5 flex flex-col sticky top-0 h-screen overflow-y-auto">
         <div className="flex items-center gap-3">
           <span className="avatar h-10 w-10 text-sm">{initials}</span>
           <div className="min-w-0">
@@ -61,7 +61,9 @@ export default async function PortalLayout({
           <button className="btn-secondary w-full py-1.5 text-xs">Sign out</button>
         </form>
       </aside>
-      <section className="p-8">{children}</section>
+      <section className="p-8">
+        <div className="max-w-6xl mx-auto">{children}</div>
+      </section>
     </div>
   );
 }

@@ -2,8 +2,9 @@
  * FR-CFG-03 — Versioned config resolver: platform -> organization -> exception.
  */
 import { describe, it, expect } from 'vitest';
-import { resolvePolicyValue, resolvePricingConfig } from '@/lib/config/policy-resolver';
+import { resolvePolicyValue, resolvePricingConfig, resolveComplianceThresholds } from '@/lib/config/policy-resolver';
 import { DEFAULT_PRICING_CONFIG } from '@/lib/pricing/calc';
+import { DEFAULT_COMPLIANCE_THRESHOLDS } from '@/lib/compliance/gate';
 
 const NOW = '2026-07-20T00:00:00.000Z';
 
@@ -88,5 +89,42 @@ describe('policy resolver', () => {
   it('resolvePricingConfig falls back entirely when no policy rows exist', () => {
     const config = resolvePricingConfig([], DEFAULT_PRICING_CONFIG, NOW);
     expect(config).toEqual(DEFAULT_PRICING_CONFIG);
+  });
+
+  it('FR-CMP-01: resolveComplianceThresholds falls back entirely when no policy rows exist', () => {
+    const thresholds = resolveComplianceThresholds([], DEFAULT_COMPLIANCE_THRESHOLDS, NOW);
+    expect(thresholds).toEqual(DEFAULT_COMPLIANCE_THRESHOLDS);
+  });
+
+  it('FR-CMP-01/02: resolveComplianceThresholds reads the seeded compliance policy shape', () => {
+    const compliancePolicy = {
+      orgId: 'org-1',
+      scope: 'organization' as const,
+      policyKey: 'compliance',
+      version: 1,
+      value: { min_auto_liability_cents: 200_000_00, min_cargo_cents: 50_000_00, warn_days: [30, 14] },
+      effectiveAt: '2026-01-01T00:00:00.000Z',
+      isActive: true,
+    };
+    const thresholds = resolveComplianceThresholds([compliancePolicy], DEFAULT_COMPLIANCE_THRESHOLDS, NOW);
+    expect(thresholds.minAutoLiabilityCents).toBe(200_000_00);
+    expect(thresholds.minCargoCents).toBe(50_000_00);
+    expect(thresholds.warnDays).toEqual([30, 14]);
+  });
+
+  it('resolveComplianceThresholds fills missing fields from the fallback', () => {
+    const partial = {
+      orgId: 'org-1',
+      scope: 'organization' as const,
+      policyKey: 'compliance',
+      version: 1,
+      value: { min_auto_liability_cents: 200_000_00 },
+      effectiveAt: '2026-01-01T00:00:00.000Z',
+      isActive: true,
+    };
+    const thresholds = resolveComplianceThresholds([partial], DEFAULT_COMPLIANCE_THRESHOLDS, NOW);
+    expect(thresholds.minAutoLiabilityCents).toBe(200_000_00);
+    expect(thresholds.minCargoCents).toBe(DEFAULT_COMPLIANCE_THRESHOLDS.minCargoCents);
+    expect(thresholds.warnDays).toEqual(DEFAULT_COMPLIANCE_THRESHOLDS.warnDays);
   });
 });

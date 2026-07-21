@@ -194,7 +194,10 @@ export default async function PortalOverview() {
             )}
             <ul className="mt-3 space-y-3">
               {priorityLoads.map((l) => (
-                <li key={l.id} className="border-t border-line pt-3 text-sm flex items-center justify-between gap-3">
+                <li
+                  key={l.id}
+                  className="table-row border-t border-line pt-3 pb-1 -mx-2 px-2 rounded-lg text-sm flex items-center justify-between gap-3"
+                >
                   <div className="min-w-0">
                     <p className="font-medium">
                       {l.reference} · {l.origin} → {l.destination}
@@ -223,7 +226,10 @@ export default async function PortalOverview() {
             )}
             <ul className="mt-3 space-y-3">
               {recentRatecons.map((rc) => (
-                <li key={rc.id} className="border-t border-line pt-3 text-sm flex items-center justify-between gap-3">
+                <li
+                  key={rc.id}
+                  className="table-row border-t border-line pt-3 pb-1 -mx-2 px-2 rounded-lg text-sm flex items-center justify-between gap-3"
+                >
                   <p className="min-w-0">
                     {rc.reference} · {rc.content_snapshot?.origin} → {rc.content_snapshot?.destination}
                   </p>

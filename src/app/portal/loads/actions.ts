@@ -13,7 +13,16 @@ import {
   type LoadStatus,
 } from '@/lib/loads/lifecycle';
 import { isQuoteReleasable } from '@/lib/pricing/override';
+import { getCarrierComplianceResult } from '@/lib/compliance/policy.server';
+import { evaluateComplianceOverride } from '@/lib/compliance/override';
+import type { ComplianceResult } from '@/lib/compliance/gate';
 import type { ActionResult } from '@/lib/actions/result';
+
+const NOT_REVIEWED_RESULT: ComplianceResult = {
+  allowed: false,
+  blockingReasons: ['NOT_REVIEWED: this carrier has not been compliance-reviewed yet.'],
+  warnings: [],
+};
 
 const UNIQUE_VIOLATION = '23505';
 const MAX_REFERENCE_ATTEMPTS = 5;
@@ -39,7 +48,7 @@ export async function createLoadFromQuote(formData: FormData): Promise<ActionRes
   const origin = String(formData.get('origin') ?? '').trim();
   const destination = String(formData.get('destination') ?? '').trim();
 
-  const { ctx } = await requirePermission(orgId, PERMISSIONS.LOAD_CREATE);
+  const { ctx, membership } = await requirePermission(orgId, PERMISSIONS.LOAD_CREATE);
 
   if (!origin || !destination) {
     return { ok: false, error: 'Origin and destination are required.' };
@@ -58,6 +67,33 @@ export async function createLoadFromQuote(formData: FormData): Promise<ActionRes
   if (bookable.load_id) return { ok: false, error: 'This quote is already attached to a load.' };
   if (!isQuoteReleasable({ required: bookable.is_override, reasons: [] }, bookable.override_approved_by)) {
     return { ok: false, error: 'This quote needs an approved override before it can be booked.' };
+  }
+
+  // FR-CMP-01/04: a carrier must be compliant to be assigned to a load.
+  // Override is a business decision made once, at booking time — the release
+  // gate below stays a hard, non-overridable check.
+  let complianceOverride: { blockingReasons: string[]; reason: string } | null = null;
+  if (carrierId) {
+    const complianceResult = (await getCarrierComplianceResult(orgId, carrierId)) ?? NOT_REVIEWED_RESULT;
+    if (!complianceResult.allowed) {
+      const overrideRequested = formData.get('complianceOverride') === 'on';
+      const overrideReason = String(formData.get('complianceOverrideReason') ?? '');
+      if (!overrideRequested) {
+        return {
+          ok: false,
+          error: `This carrier is not compliant: ${complianceResult.blockingReasons.join(' ')}`,
+        };
+      }
+      const decision = evaluateComplianceOverride({
+        requesterRoles: membership.role,
+        reason: overrideReason,
+        result: complianceResult,
+      });
+      if (!decision.ok) {
+        return { ok: false, error: decision.message ?? decision.error ?? 'Compliance override denied.' };
+      }
+      complianceOverride = { blockingReasons: complianceResult.blockingReasons, reason: overrideReason.trim() };
+    }
   }
 
   let created: { id: string; reference: string } | null = null;
@@ -115,6 +151,17 @@ export async function createLoadFromQuote(formData: FormData): Promise<ActionRes
     after: { status: 'quoted', reference: created.reference, quoteId },
   });
 
+  if (complianceOverride) {
+    await writeAudit({
+      orgId,
+      actorUserId: ctx.userId,
+      action: AUDIT_ACTIONS.COMPLIANCE_OVERRIDE,
+      entityType: 'load',
+      entityId: created.id,
+      after: { carrierId, ...complianceOverride },
+    });
+  }
+
   revalidatePath('/portal/loads');
   return { ok: true };
 }
@@ -122,9 +169,10 @@ export async function createLoadFromQuote(formData: FormData): Promise<ActionRes
 interface LoadRow {
   id: string;
   status: LoadStatus;
+  carrier_id: string | null;
 }
 
-/** FR-LD-02/FR-RC-05: only a legal next status, gated on a signed rate-con where required. */
+/** FR-LD-02/FR-RC-05/FR-CMP-01: only a legal next status, gated on a signed rate-con and carrier compliance where required. */
 export async function advanceLoadStatus(formData: FormData): Promise<ActionResult> {
   const orgId = String(formData.get('orgId') ?? '');
   const loadId = String(formData.get('loadId') ?? '');
@@ -135,7 +183,7 @@ export async function advanceLoadStatus(formData: FormData): Promise<ActionResul
   const supabase = await getServerSupabase();
   const { data: load, error: loadError } = await supabase
     .from('loads_data')
-    .select('id, status')
+    .select('id, status, carrier_id')
     .eq('id', loadId)
     .eq('org_id', orgId)
     .single();
@@ -172,6 +220,21 @@ export async function advanceLoadStatus(formData: FormData): Promise<ActionResul
       return {
         ok: false,
         error: 'This load needs a signed rate confirmation before it can be released to the driver.',
+      };
+    }
+
+    // FR-CMP-01: the release-to-driver gate is a hard, non-overridable
+    // compliance check — a booking-time override (createLoadFromQuote) does
+    // not carry forward here. A carrier's compliance can change between
+    // booking and release (e.g. insurance expiring), so it is re-checked now.
+    if (!row.carrier_id) {
+      return { ok: false, error: 'This load has no carrier assigned.' };
+    }
+    const complianceResult = (await getCarrierComplianceResult(orgId, row.carrier_id)) ?? NOT_REVIEWED_RESULT;
+    if (!complianceResult.allowed) {
+      return {
+        ok: false,
+        error: `Cannot release to driver — carrier is not compliant: ${complianceResult.blockingReasons.join(' ')}`,
       };
     }
   }
