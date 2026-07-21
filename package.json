@@ -22,7 +22,8 @@
     "test:watch": "vitest",
     "test:setup-db": "node scripts/test-db.mjs up",
     "test:teardown-db": "node scripts/test-db.mjs down",
-    "test:offline": "node --experimental-strip-types --import ./tests/_node/register.mjs --test tests/rbac.test.ts tests/driver-masking.test.ts tests/pricing.test.ts tests/pricing-override.test.ts tests/compliance-gate.test.ts tests/signature-evidence.test.ts tests/invoice-eligibility.test.ts tests/lifecycle.test.ts tests/loads-reference.test.ts tests/policy-resolver.test.ts tests/ratecons-reference.test.ts tests/pricing-snapshot.test.ts tests/compliance-override.test.ts tests/rfq-lifecycle.test.ts tests/document-hash.test.ts tests/accessorials.test.ts tests/notification-templates.test.ts tests/rfq-freight-detail.test.ts tests/ratecon-pdf.test.ts tests/status-tone.test.ts",
+    "test:offline": "node --experimental-strip-types --import ./tests/_node/register.mjs --test tests/rbac.test.ts tests/driver-masking.test.ts tests/pricing.test.ts tests/pricing-override.test.ts tests/compliance-gate.test.ts tests/signature-evidence.test.ts tests/invoice-eligibility.test.ts tests/lifecycle.test.ts tests/loads-reference.test.ts tests/policy-resolver.test.ts tests/ratecons-reference.test.ts tests/pricing-snapshot.test.ts tests/compliance-override.test.ts tests/rfq-lifecycle.test.ts tests/document-hash.test.ts tests/accessorials.test.ts tests/notification-templates.test.ts tests/rfq-freight-detail.test.ts tests/status-tone.test.ts",
+    "test:deps": "vitest run tests/ratecon-pdf.test.ts",
     "test:db": "bash scripts/verify-db.sh"
   },
   "dependencies": {
