@@ -101,10 +101,18 @@ mode is required, so nothing ships straight from `master`.
 2. Run the repo's Definition of Done from `CLAUDE.md`:
    - `npm run test:offline` — must be green
    - `npm run typecheck` — must be clean
-   - `npm run build` — note known pre-existing prerender flakiness on `/` and
-     `/login` (`TypeError: a[d] is not a function`) unrelated to any feature
-     work — don't block on that specific failure, but do block on anything
-     else
+   - `npm run build` — **not optional, and not substitutable with
+     typecheck.** `tsc --noEmit` only checks types; `next build` also runs
+     ESLint, and a lint-only violation (e.g. `prefer-const` on a `let` that's
+     never reassigned — only its properties are mutated) passes typecheck
+     clean but fails CI's "Typecheck and build" job. This has actually
+     happened: a PR looked ready locally, then failed CI, and what looked
+     like a merge conflict from the PR list was actually this. Always run
+     the real `build`, even though it's slower than `typecheck` alone. Note:
+     earlier prerender flakiness on `/` and `/login`
+     (`TypeError: a[d] is not a function`) was observed once and doesn't
+     appear to reproduce anymore — don't wave away a build failure as "that
+     known issue" without confirming it's actually the same error.
    - `npm run verify:rls` — only if the change touches RLS, migrations, or
      permissions; skip otherwise and say why
    - If a schema changed, confirm a numbered migration exists under

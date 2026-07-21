@@ -30,6 +30,7 @@ interface RateconRow {
   id: string;
   reference: string;
   status: string;
+  load_id: string;
   content_snapshot: RateconContentSnapshot | null;
 }
 
@@ -71,10 +72,28 @@ export default async function RateconsPage() {
   // loads list page.
   const { data: rateconData, error } = await supabase
     .from('rate_confirmations')
-    .select('id, reference, status, content_snapshot')
+    .select('id, reference, status, load_id, content_snapshot')
     .order('created_at', { ascending: false });
   if (error) throw error;
   const ratecons = (rateconData as RateconRow[]) ?? [];
+
+  // FR-RC-08: surface the system-generated signed PDF (doc_type
+  // 'ratecon_pdf', written by signRatecon) right where it was signed, in
+  // addition to it appearing in the general Documents list.
+  const pdfUrlByLoad = new Map<string, string>();
+  const signedLoadIds = ratecons.filter((rc) => rc.status === 'signed').map((rc) => rc.load_id);
+  if (signedLoadIds.length > 0) {
+    const { data: pdfDocs } = await supabase
+      .from('documents')
+      .select('load_id, storage_path')
+      .eq('doc_type', 'ratecon_pdf')
+      .in('load_id', signedLoadIds);
+    for (const doc of (pdfDocs as { load_id: string; storage_path: string | null }[]) ?? []) {
+      if (!doc.storage_path) continue;
+      const { data: signed } = await supabase.storage.from('documents').createSignedUrl(doc.storage_path, 60);
+      if (signed?.signedUrl) pdfUrlByLoad.set(doc.load_id, signed.signedUrl);
+    }
+  }
 
   // In practice one ratecon has at most one signature, but order ascending
   // so that IF more than one ever exists (e.g. a future re-versioning flow),
@@ -159,7 +178,12 @@ export default async function RateconsPage() {
                 <StatusBadge facet={STATUS_FACET.RATECON} value={rc.status} />
               </div>
 
-              <RateconDocument snapshot={rc.content_snapshot} reference={rc.reference} signature={signatureByRatecon.get(rc.id)} />
+              <RateconDocument
+                snapshot={rc.content_snapshot}
+                reference={rc.reference}
+                signature={signatureByRatecon.get(rc.id)}
+                pdfUrl={pdfUrlByLoad.get(rc.load_id) ?? null}
+              />
 
               {canSign && rc.status === 'sent' && (
                 <ActionForm action={signRatecon} className="mt-3 space-y-3 max-w-md">
@@ -206,10 +230,12 @@ function RateconDocument({
   snapshot,
   reference,
   signature,
+  pdfUrl,
 }: {
   snapshot: RateconContentSnapshot | null;
   reference: string;
   signature: SignatureRow | undefined;
+  pdfUrl: string | null;
 }) {
   if (!snapshot) return null;
   const rate =
@@ -275,6 +301,13 @@ function RateconDocument({
             </p>
           ) : (
             <p className="mt-1 text-xs text-muted">Awaiting carrier signature.</p>
+          )}
+          {pdfUrl && (
+            <p className="mt-1">
+              <a href={pdfUrl} className="text-copper-500 text-xs" target="_blank" rel="noreferrer">
+                Download signed PDF
+              </a>
+            </p>
           )}
         </div>
       </div>

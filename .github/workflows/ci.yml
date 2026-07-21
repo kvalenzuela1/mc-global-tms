@@ -28,7 +28,10 @@ jobs:
         run: npm run test:offline
 
   # ---------------------------------------------------------------------------
-  # Typecheck + production build.
+  # Typecheck + production build, plus the handful of tests that genuinely need
+  # npm dependencies installed (`test:deps`) and so cannot run in the offline
+  # job above. Keep that list short — offline is still the default home for
+  # domain tests.
   # ---------------------------------------------------------------------------
   build:
     name: Typecheck and build
@@ -55,6 +58,9 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Run dependency-requiring tests
+        run: npm run test:deps
 
       - name: Build
         env:

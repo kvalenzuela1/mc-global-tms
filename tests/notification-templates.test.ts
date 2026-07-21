@@ -6,6 +6,8 @@ import {
   overrideNeedsApprovalEmail,
   loadBookedReadyForRateconEmail,
   loadDeliveredReadyToInvoiceEmail,
+  rateconReadyToSignEmail,
+  rateconSignedReadyForReleaseEmail,
 } from '@/lib/notifications/templates';
 
 describe('notification templates', () => {
@@ -44,5 +46,30 @@ describe('notification templates', () => {
     expect(email.subject).toContain('ready to invoice');
     expect(email.html).toContain('Test → Test');
     expect(email.templateKey).toBe('load_delivered_ready_to_invoice');
+  });
+
+  it('ratecon-ready-to-sign email includes the ratecon reference, load reference, and lane', () => {
+    const email = rateconReadyToSignEmail({
+      rateconReference: 'RC-2048',
+      loadReference: 'LD-1051',
+      lane: 'Elizabeth, NJ → Miami, FL',
+    });
+    expect(email.subject).toContain('RC-2048');
+    expect(email.html).toContain('LD-1051');
+    expect(email.html).toContain('Elizabeth, NJ → Miami, FL');
+    expect(email.templateKey).toBe('ratecon_ready_to_sign');
+  });
+
+  it('ratecon-signed-ready-for-release email includes the load reference, lane, and carrier', () => {
+    const email = rateconSignedReadyForReleaseEmail({
+      loadReference: 'LD-1051',
+      lane: 'Elizabeth, NJ → Miami, FL',
+      carrierName: 'Horizon Freight LLC',
+    });
+    expect(email.subject).toContain('LD-1051');
+    expect(email.subject).toContain('ready to release');
+    expect(email.html).toContain('Elizabeth, NJ → Miami, FL');
+    expect(email.html).toContain('Horizon Freight LLC');
+    expect(email.templateKey).toBe('ratecon_signed_ready_for_release');
   });
 });
