@@ -9,6 +9,8 @@ import { computePricing } from '@/lib/pricing/calc';
 import { resolveOrgPricingConfig } from '@/lib/config/policies.server';
 import { assessOverride, evaluateRequest, evaluateApproval } from '@/lib/pricing/override';
 import { RFQ_STATUS } from '@/lib/rfqs/lifecycle';
+import { notifyPermissionHolders } from '@/lib/notifications/notify.server';
+import { overrideNeedsApprovalEmail } from '@/lib/notifications/templates';
 import type { ActionResult } from '@/lib/actions/result';
 
 /**
@@ -126,6 +128,24 @@ export async function createQuote(formData: FormData): Promise<ActionResult> {
     entityId: data.id,
     after: { reason: reason.trim(), reasons: assessment.reasons },
   });
+
+  // FR-NOTIF-01: whoever can approve this needs to know it's waiting on
+  // them — checking the Pricing page is not a substitute for being told.
+  let lane = 'an ad-hoc quote (no linked RFQ)';
+  if (rfqId) {
+    const { data: rfq } = await supabase.from('rfqs').select('origin, destination').eq('id', rfqId).maybeSingle();
+    if (rfq) lane = `${rfq.origin} → ${rfq.destination}`;
+  }
+  await notifyPermissionHolders(
+    orgId,
+    PERMISSIONS.PRICING_OVERRIDE_APPROVE,
+    overrideNeedsApprovalEmail({
+      lane,
+      shipperPriceCents: pricing.shipperPriceCents,
+      marginPercent: pricing.marginPercent,
+      reason: reason.trim(),
+    }),
+  );
 
   revalidatePath('/portal/pricing');
   return { ok: true };
