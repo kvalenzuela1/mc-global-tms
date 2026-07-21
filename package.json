@@ -2,7 +2,7 @@
   "name": "mc-global-tms",
   "version": "0.1.0-phase1",
   "private": true,
-  "description": "M.C. Global Freight Solutions LLC — Phase 1 Logistics TMS (controlled pilot). Milestones 1 & 2: foundation, auth, tenant isolation, RBAC, audit.",
+  "description": "MC Global Freight Solutions LLC — Phase 1 Logistics TMS (controlled pilot). Milestones 1 & 2: foundation, auth, tenant isolation, RBAC, audit.",
   "engines": {
     "node": ">=20.0.0"
   },

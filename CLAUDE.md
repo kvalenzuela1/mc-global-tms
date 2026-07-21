@@ -1,4 +1,4 @@
-# M.C. Global Freight TMS — working guide for Claude
+# MC Global Freight TMS — working guide for Claude
 
 Phase 1 logistics TMS, controlled pilot. Read this before touching anything;
 it encodes constraints that are invisible in the code and expensive to discover.

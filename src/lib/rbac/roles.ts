@@ -1,5 +1,5 @@
 /**
- * RBAC role definitions for the M.C. Global Freight TMS.
+ * RBAC role definitions for the MC Global Freight TMS.
  *
  * Requirement coverage:
  *   FR-RBAC-01  Enumerated, server-enforced roles.
@@ -31,7 +31,7 @@ export type Role = (typeof ROLES)[keyof typeof ROLES];
 
 export const ALL_ROLES: Role[] = Object.values(ROLES);
 
-/** Roles that belong to the M.C. Global brokerage (internal staff). */
+/** Roles that belong to the MC Global brokerage (internal staff). */
 export const INTERNAL_ROLES: Role[] = [
   ROLES.ORG_ADMIN,
   ROLES.BROKER_MANAGER,

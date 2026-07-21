@@ -49,7 +49,7 @@ export default async function PortalLayout({
         <div className="flex items-center gap-3">
           <span className="avatar h-10 w-10 text-sm">{initials}</span>
           <div className="min-w-0">
-            <p className="text-copper-400 font-bold leading-tight">M.C. Global</p>
+            <p className="text-copper-400 font-bold leading-tight">MC Global</p>
             <p className="text-xs text-muted truncate">{active.orgName}</p>
           </div>
         </div>

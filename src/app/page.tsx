@@ -9,7 +9,7 @@ export default function HomePage() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-24">
       <p className="text-copper-400 font-semibold tracking-wide uppercase text-sm">
-        M.C. Global Freight Solutions LLC
+        MC Global Freight Solutions LLC
       </p>
       <h1 className="mt-3 text-4xl font-bold text-ink">
         Freight moves better with a partner who sees the whole route.

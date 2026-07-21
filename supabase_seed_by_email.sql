@@ -7,9 +7,9 @@
 --
 -- BEFORE running this, create these 6 users in Authentication -> Users
 -- (any password; you'll log in with them):
---   owner@mcglobalfreightllc.com        -> org_admin        (M.C. Global)
---   manager@mcglobalfreightllc.com      -> broker_manager   (M.C. Global)
---   dispatcher@mcglobalfreightllc.com   -> broker_dispatcher(M.C. Global)
+--   owner@mcglobalfreightllc.com        -> org_admin        (MC Global)
+--   manager@mcglobalfreightllc.com      -> broker_manager   (MC Global)
+--   dispatcher@mcglobalfreightllc.com   -> broker_dispatcher(MC Global)
 --   dispatch@horizonfreight.example     -> carrier_dispatch (Horizon Freight)
 --   driver@horizonfreight.example       -> driver           (Horizon Freight)
 --   buyer@summitretail.example          -> shipper          (Summit Retail)
@@ -37,7 +37,7 @@ truncate audit_log, settlements, invoices, milestones, documents, signatures,
          carriers, shippers, policies, memberships, organizations restart identity cascade;
 
 insert into organizations (id, name, org_type, mc_number, dot_number) values
-  ('11111111-1111-1111-1111-111111111111','M.C. Global Freight Solutions LLC','broker','MC-111111','DOT-111111'),
+  ('11111111-1111-1111-1111-111111111111','MC Global Freight Solutions LLC','broker','MC-111111','DOT-111111'),
   ('22222222-2222-2222-2222-222222222222','Horizon Freight LLC','carrier','MC-222222','DOT-2222220'),
   ('33333333-3333-3333-3333-333333333333','Summit Retail Co.','shipper',null,null);
 

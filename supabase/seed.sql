@@ -5,7 +5,7 @@
 --   FR-SEED-01  Stable demo IDs + realistic data for repeatable demonstrations
 --               and tests (Delivery Plan implementation guardrail).
 --
--- Personas: broker owner/manager/dispatcher (M.C. Global), carrier dispatch +
+-- Personas: broker owner/manager/dispatcher (MC Global), carrier dispatch +
 -- driver (Horizon Freight), shipper (Summit Retail), and a SEPARATE rival
 -- broker org used only to prove tenant isolation.
 --
@@ -21,7 +21,7 @@ truncate audit_log, settlements, invoices, milestones, documents, signatures,
 
 -- Organizations --------------------------------------------------------------
 insert into organizations (id, name, org_type, mc_number, dot_number) values
-  ('11111111-1111-1111-1111-111111111111','M.C. Global Freight Solutions LLC','broker','MC-111111','DOT-111111'),
+  ('11111111-1111-1111-1111-111111111111','MC Global Freight Solutions LLC','broker','MC-111111','DOT-111111'),
   ('22222222-2222-2222-2222-222222222222','Horizon Freight LLC','carrier','MC-222222','DOT-2222220'),
   ('33333333-3333-3333-3333-333333333333','Summit Retail Co.','shipper',null,null),
   ('99999999-9999-9999-9999-999999999999','Rival Brokerage Inc.','broker','MC-999999','DOT-999999');

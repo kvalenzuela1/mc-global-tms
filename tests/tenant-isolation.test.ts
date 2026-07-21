@@ -34,7 +34,7 @@ it('FR-TEN-01: a broker dispatcher sees only their org loads, never the rival or
   expect(rows.some((r) => r.id === RIVAL_LOAD)).toBe(false);
 });
 
-it('FR-TEN-01: the rival admin cannot see M.C. Global loads', async () => {
+it('FR-TEN-01: the rival admin cannot see MC Global loads', async () => {
   const rows = await asUser(IDS.user.rivalAdmin, async (c) => {
     const r = await c.query('select id from loads');
     return r.rows;
@@ -79,7 +79,7 @@ it('FR-TEN-01: WITH CHECK blocks writing a load into another org', async () => {
   ).rejects.toThrow();
 });
 
-it('FR-TEN-02: rival admin cannot read M.C. Global memberships', async () => {
+it('FR-TEN-02: rival admin cannot read MC Global memberships', async () => {
   const rows = await asUser(IDS.user.rivalAdmin, async (c) => {
     const r = await c.query('select user_id from memberships where org_id = $1', [IDS.org.mcg]);
     return r.rows;

@@ -1,4 +1,4 @@
-# M.C. Global Freight Solutions LLC — Phase 1 Logistics TMS
+# MC Global Freight Solutions LLC — Phase 1 Logistics TMS
 
 A cost-conscious, production-minded Transportation Management System for a
 controlled brokerage pilot. **This drop is Milestones 1 & 2 only** (foundation +
