@@ -20,6 +20,10 @@ interface ShipperRow {
   name: string;
 }
 
+function rfqBadgeClass(status: string): string {
+  return status === 'open' ? 'badge-warn' : 'badge-muted';
+}
+
 export default async function RfqsPage() {
   const ctx = await getSessionContext();
   const active = ctx?.active ?? ctx?.memberships[0] ?? null;
@@ -59,10 +63,7 @@ export default async function RfqsPage() {
           <h2 className="font-semibold">New RFQ</h2>
           <div>
             <label className="block text-sm mb-1">Shipper</label>
-            <select
-              name="shipperId"
-              className="w-full rounded-lg bg-charcoal-800 border border-line px-3 py-2"
-            >
+            <select name="shipperId" className="input">
               <option value="">— Unassigned —</option>
               {shippers.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -74,36 +75,20 @@ export default async function RfqsPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm mb-1">Origin</label>
-              <input
-                name="origin"
-                required
-                className="w-full rounded-lg bg-charcoal-800 border border-line px-3 py-2"
-              />
+              <input name="origin" required className="input" />
             </div>
             <div>
               <label className="block text-sm mb-1">Destination</label>
-              <input
-                name="destination"
-                required
-                className="w-full rounded-lg bg-charcoal-800 border border-line px-3 py-2"
-              />
+              <input name="destination" required className="input" />
             </div>
           </div>
           <div>
             <label className="block text-sm mb-1">Freight details</label>
-            <input
-              name="freightDetails"
-              placeholder="18,000 lbs · 26 pallets"
-              className="w-full rounded-lg bg-charcoal-800 border border-line px-3 py-2"
-            />
+            <input name="freightDetails" placeholder="18,000 lbs · 26 pallets" className="input" />
           </div>
           <div>
             <label className="block text-sm mb-1">Pickup date/time</label>
-            <input
-              type="datetime-local"
-              name="pickupAt"
-              className="w-full rounded-lg bg-charcoal-800 border border-line px-3 py-2"
-            />
+            <input type="datetime-local" name="pickupAt" className="input" />
           </div>
           <SubmitButton className="btn-copper px-4 py-2" pendingLabel="Saving…">
             Create RFQ
@@ -115,7 +100,7 @@ export default async function RfqsPage() {
         <h2 className="font-semibold">Open RFQs</h2>
         <table className="mt-4 w-full text-sm">
           <thead className="text-muted text-left">
-            <tr>
+            <tr className="border-b border-line">
               <th className="pb-2">Lane</th>
               <th className="pb-2">Service</th>
               <th className="pb-2">Status</th>
@@ -124,18 +109,20 @@ export default async function RfqsPage() {
           </thead>
           <tbody>
             {((rfqs as RfqRow[]) ?? []).map((r) => (
-              <tr key={r.id} className="border-t border-line">
+              <tr key={r.id} className="table-row border-t border-line">
                 <td className="py-2">
                   {r.origin} → {r.destination}
                 </td>
                 <td className="py-2">{r.service_type}</td>
-                <td className="py-2">{r.status}</td>
+                <td className="py-2">
+                  <span className={`badge ${rfqBadgeClass(r.status)}`}>{r.status}</span>
+                </td>
                 <td className="py-2">{r.pickup_at ? new Date(r.pickup_at).toLocaleString() : '—'}</td>
               </tr>
             ))}
             {(rfqs ?? []).length === 0 && (
               <tr>
-                <td colSpan={4} className="py-4 text-muted">
+                <td colSpan={4} className="py-8 text-muted text-center">
                   No RFQs yet.
                 </td>
               </tr>

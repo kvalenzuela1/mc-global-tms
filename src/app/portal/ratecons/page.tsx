@@ -21,6 +21,12 @@ interface RateconRow {
   content_snapshot: { origin?: string; destination?: string; carrier_rate_cents?: number } | null;
 }
 
+function rateconBadgeClass(status: string): string {
+  if (status === 'signed') return 'badge-ok';
+  if (status === 'sent') return 'badge-warn';
+  return 'badge-muted';
+}
+
 export default async function RateconsPage() {
   const ctx = await getSessionContext();
   const active = ctx?.active ?? ctx?.memberships[0] ?? null;
@@ -78,7 +84,7 @@ export default async function RateconsPage() {
               return (
               <li
                 key={l.id}
-                className="border-t border-line pt-3 text-sm flex items-center justify-between gap-4"
+                className="table-row border-t border-line pt-3 pb-2 -mx-2 px-2 rounded-lg text-sm flex items-center justify-between gap-4"
               >
                 <div>
                   <p>
@@ -110,14 +116,16 @@ export default async function RateconsPage() {
         {ratecons.length === 0 && <p className="text-sm text-muted mt-2">None yet.</p>}
         <ul className="mt-4 space-y-4">
           {ratecons.map((rc) => (
-            <li key={rc.id} className="border-t border-line pt-4 text-sm">
-              <p>
-                {rc.reference} · {rc.content_snapshot?.origin} → {rc.content_snapshot?.destination}
-                {typeof rc.content_snapshot?.carrier_rate_cents === 'number'
-                  ? ` · $${(rc.content_snapshot.carrier_rate_cents / 100).toFixed(2)}`
-                  : ''}
-              </p>
-              <p className="text-muted text-xs mt-1">Status: {rc.status}</p>
+            <li key={rc.id} className="table-row border-t border-line pt-4 pb-2 -mx-2 px-2 rounded-lg text-sm">
+              <div className="flex items-center justify-between gap-4">
+                <p>
+                  {rc.reference} · {rc.content_snapshot?.origin} → {rc.content_snapshot?.destination}
+                  {typeof rc.content_snapshot?.carrier_rate_cents === 'number'
+                    ? ` · $${(rc.content_snapshot.carrier_rate_cents / 100).toFixed(2)}`
+                    : ''}
+                </p>
+                <span className={`badge ${rateconBadgeClass(rc.status)}`}>{rc.status}</span>
+              </div>
 
               {canSign && rc.status === 'sent' && (
                 <ActionForm action={signRatecon} className="mt-3 space-y-3 max-w-md">
@@ -125,18 +133,11 @@ export default async function RateconsPage() {
                   <input type="hidden" name="rateconId" value={rc.id} />
                   <div>
                     <label className="block text-sm mb-1">Your name</label>
-                    <input
-                      name="signerName"
-                      required
-                      className="w-full rounded-lg bg-charcoal-800 border border-line px-3 py-2"
-                    />
+                    <input name="signerName" required className="input" />
                   </div>
                   <div>
                     <label className="block text-sm mb-1">Your title</label>
-                    <input
-                      name="signerTitle"
-                      className="w-full rounded-lg bg-charcoal-800 border border-line px-3 py-2"
-                    />
+                    <input name="signerTitle" className="input" />
                   </div>
                   <label className="flex items-start gap-2 text-xs text-muted">
                     <input type="checkbox" name="consent" className="mt-0.5" />
