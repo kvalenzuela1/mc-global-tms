@@ -5,6 +5,9 @@ import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { RFQ_STATUS_SEQUENCE, RFQ_STATUS_LABELS, type RfqStatus } from '@/lib/rfqs/lifecycle';
 import { PACKAGING_TYPE_LABELS, type PackagingType } from '@/lib/rfqs/freight-detail';
+import { Breadcrumb } from '../../_components/breadcrumb';
+import { LifecycleTimeline } from '../../_components/lifecycle-timeline';
+import { StatusBadge, STATUS_FACET } from '../../_components/status-badge';
 
 interface RfqDetail {
   id: string;
@@ -67,39 +70,6 @@ function formatDimensions(detail: RfqDetail): string {
   return `${parts.join(', ')} ${unit.toUpperCase()}`;
 }
 
-function quoteBadgeClass(status: string): string {
-  if (status === 'approved') return 'badge-ok';
-  if (status === 'pending_approval') return 'badge-warn';
-  return 'badge-muted';
-}
-
-function RfqTimeline({ status }: { status: RfqStatus }) {
-  const currentIndex = RFQ_STATUS_SEQUENCE.indexOf(status);
-  return (
-    <div className="flex items-center">
-      {RFQ_STATUS_SEQUENCE.map((stage, i) => (
-        <div key={stage} className="flex items-center flex-1 last:flex-none">
-          <div className="flex flex-col items-center gap-2">
-            <span
-              className={`h-3 w-3 rounded-full ${i <= currentIndex ? 'bg-copper-500' : 'bg-charcoal-600'}`}
-            />
-            <span
-              className={`text-xs whitespace-nowrap ${
-                i === currentIndex ? 'text-ink font-semibold' : 'text-muted'
-              }`}
-            >
-              {RFQ_STATUS_LABELS[stage]}
-            </span>
-          </div>
-          {i < RFQ_STATUS_SEQUENCE.length - 1 && (
-            <div className={`h-px flex-1 mx-2 mb-5 ${i < currentIndex ? 'bg-copper-500' : 'bg-line'}`} />
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default async function RfqDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
@@ -150,9 +120,12 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
 
   return (
     <div>
-      <Link href="/portal/rfqs" className="text-sm text-muted hover:text-ink">
-        ← Back to RFQs
-      </Link>
+      <Breadcrumb
+        trail={[
+          { label: 'RFQs', href: '/portal/rfqs' },
+          { label: `${detail.origin} → ${detail.destination}` },
+        ]}
+      />
 
       <div className="flex items-start justify-between gap-4 mt-3">
         <div>
@@ -163,10 +136,15 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
             {detail.shippers?.name ?? 'No shipper assigned'} · {detail.service_type}
           </p>
         </div>
+        <StatusBadge facet={STATUS_FACET.RFQ} value={detail.status} className="whitespace-nowrap" />
       </div>
 
       <div className="panel mt-6 p-6">
-        <RfqTimeline status={detail.status} />
+        <LifecycleTimeline
+          sequence={RFQ_STATUS_SEQUENCE}
+          labels={RFQ_STATUS_LABELS}
+          current={detail.status}
+        />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6 mt-6">
@@ -235,7 +213,7 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
                       ${(q.shipper_price_cents / 100).toFixed(2)} · margin $
                       {(q.margin_amount_cents / 100).toFixed(2)} ({(q.margin_percent * 100).toFixed(1)}%)
                     </p>
-                    <span className={`badge ${quoteBadgeClass(q.status)}`}>{q.status}</span>
+                    <StatusBadge facet={STATUS_FACET.QUOTE} value={q.status} />
                   </Link>
                   {q.is_override && (
                     <p className="text-muted text-xs mt-1">Override: {q.override_reason}</p>

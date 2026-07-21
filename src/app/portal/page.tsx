@@ -7,6 +7,8 @@ import { LOAD_STATUS, LOAD_STATUS_LABELS, LOAD_STATUS_SEQUENCE, type LoadStatus 
 import { RFQ_STATUS_LABELS, RFQ_STATUS_SEQUENCE, type RfqStatus } from '@/lib/rfqs/lifecycle';
 import { ACCESSORIAL_TYPE_LABELS, type AccessorialType } from '@/lib/accessorials/calc';
 import { getOrgComplianceResults } from '@/lib/compliance/policy.server';
+import { StatusBadge, STATUS_FACET } from './_components/status-badge';
+import { badgeClassFor } from '@/lib/ui/status-tone';
 
 interface PriorityLoad {
   id: string;
@@ -22,25 +24,6 @@ interface RecentRatecon {
   reference: string;
   status: string;
   content_snapshot: { origin?: string; destination?: string } | null;
-}
-
-const OK_STATUSES: LoadStatus[] = [LOAD_STATUS.DELIVERED, LOAD_STATUS.INVOICED, LOAD_STATUS.CLOSED];
-const WARN_STATUSES: LoadStatus[] = [
-  LOAD_STATUS.BOOKED,
-  LOAD_STATUS.AWAITING_CARRIER_SIGNATURE,
-  LOAD_STATUS.SIGNED_AWAITING_BROKER_RELEASE,
-];
-
-function loadBadgeClass(status: LoadStatus): string {
-  if (OK_STATUSES.includes(status)) return 'badge-ok';
-  if (WARN_STATUSES.includes(status)) return 'badge-warn';
-  return 'badge-muted';
-}
-
-function rateconBadgeClass(status: string): string {
-  if (status === 'signed') return 'badge-ok';
-  if (status === 'sent') return 'badge-warn';
-  return 'badge-muted';
 }
 
 export default async function PortalOverview() {
@@ -262,9 +245,7 @@ export default async function PortalOverview() {
                     </p>
                     <p className="text-muted text-xs mt-0.5">{l.carrier_name ?? 'No carrier assigned'}</p>
                   </div>
-                  <span className={`badge ${loadBadgeClass(l.status)}`}>
-                    {LOAD_STATUS_LABELS[l.status] ?? l.status}
-                  </span>
+                  <StatusBadge facet={STATUS_FACET.LOAD} value={l.status} />
                 </li>
               ))}
             </ul>
@@ -291,7 +272,7 @@ export default async function PortalOverview() {
                   <p className="min-w-0">
                     {rc.reference} · {rc.content_snapshot?.origin} → {rc.content_snapshot?.destination}
                   </p>
-                  <span className={`badge ${rateconBadgeClass(rc.status)}`}>{rc.status}</span>
+                  <StatusBadge facet={STATUS_FACET.RATECON} value={rc.status} />
                 </li>
               ))}
             </ul>
@@ -357,13 +338,17 @@ export default async function PortalOverview() {
                   <div className="flex justify-between gap-3">
                     <dt className="text-muted">Compliant</dt>
                     <dd className="tabular-nums">
-                      <span className="badge badge-ok">{carrierCompliance.compliant}</span>
+                      <span className={badgeClassFor(STATUS_FACET.COMPLIANCE, 'compliant')}>
+                        {carrierCompliance.compliant}
+                      </span>
                     </dd>
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-muted">Blocked</dt>
                     <dd className="tabular-nums">
-                      <span className="badge badge-warn">{carrierCompliance.blocked}</span>
+                      <span className={badgeClassFor(STATUS_FACET.COMPLIANCE, 'blocked')}>
+                        {carrierCompliance.blocked}
+                      </span>
                     </dd>
                   </div>
                 </dl>

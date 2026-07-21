@@ -3,6 +3,8 @@ import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { getOrgComplianceResults } from '@/lib/compliance/policy.server';
 import { ActionForm } from '../_components/action-form';
+import { StatusBadge, STATUS_FACET } from '../_components/status-badge';
+import { badgeClassFor, labelFor } from '@/lib/ui/status-tone';
 import { SubmitButton } from '../_components/submit-button';
 import { createCarrier, setCarrierStatus, refreshFmcsaCheck, updateComplianceReview } from './actions';
 
@@ -12,12 +14,6 @@ interface CarrierRow {
   dot_number: string;
   mc_number: string | null;
   status: string;
-}
-
-function statusBadgeClass(status: string): string {
-  if (status === 'approved') return 'badge-ok';
-  if (status === 'conditional') return 'badge-warn';
-  return 'badge-muted'; // suspended / rejected
 }
 
 export default async function CarriersPage() {
@@ -89,13 +85,15 @@ export default async function CarriersPage() {
                       {c.mc_number ? <span className="text-muted font-normal"> · {c.mc_number}</span> : null}
                     </p>
                     <div className="mt-1.5 flex items-center gap-2">
-                      <span className={`badge ${statusBadgeClass(c.status)}`}>{c.status}</span>
+                      <StatusBadge facet={STATUS_FACET.CARRIER} value={c.status} />
                       {result === null ? (
-                        <span className="badge badge-muted">not yet reviewed</span>
+                        <StatusBadge facet={STATUS_FACET.COMPLIANCE} value="unreviewed" />
                       ) : result.allowed ? (
-                        <span className="badge badge-ok">compliant</span>
+                        <StatusBadge facet={STATUS_FACET.COMPLIANCE} value="compliant" />
                       ) : (
-                        <span className="badge badge-warn">blocked ({result.blockingReasons.length})</span>
+                        <span className={badgeClassFor(STATUS_FACET.COMPLIANCE, 'blocked')}>
+                          {labelFor(STATUS_FACET.COMPLIANCE, 'blocked')} ({result.blockingReasons.length})
+                        </span>
                       )}
                     </div>
                     {result && result.blockingReasons.length > 0 && (
