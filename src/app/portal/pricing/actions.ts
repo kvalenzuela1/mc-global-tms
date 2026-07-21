@@ -8,7 +8,26 @@ import { AUDIT_ACTIONS, writeAudit } from '@/lib/audit/log';
 import { computePricing } from '@/lib/pricing/calc';
 import { resolveOrgPricingConfig } from '@/lib/config/policies.server';
 import { assessOverride, evaluateRequest, evaluateApproval } from '@/lib/pricing/override';
+import { RFQ_STATUS } from '@/lib/rfqs/lifecycle';
 import type { ActionResult } from '@/lib/actions/result';
+
+/**
+ * FR-RFQ-02: a quote against an RFQ advances it OPEN -> QUOTED. Guarded by
+ * `.eq('status', RFQ_STATUS.OPEN)` rather than a read-then-write, so this is
+ * a no-op (not an error) if the RFQ has already moved past OPEN — e.g. a
+ * second quote requested for the same RFQ after the first was rejected.
+ */
+async function advanceRfqToQuoted(
+  supabase: Awaited<ReturnType<typeof getServerSupabase>>,
+  rfqId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('rfqs')
+    .update({ status: RFQ_STATUS.QUOTED })
+    .eq('id', rfqId)
+    .eq('status', RFQ_STATUS.OPEN);
+  if (error) throw error;
+}
 
 /**
  * Quote a lane and, when the quote breaches policy, request a pricing
@@ -54,6 +73,7 @@ export async function createQuote(formData: FormData): Promise<ActionResult> {
       .from('quotes')
       .insert({ ...base, is_override: false, status: 'approved' });
     if (error) throw error;
+    if (rfqId) await advanceRfqToQuoted(supabase, rfqId);
     revalidatePath('/portal/pricing');
     return { ok: true };
   }
@@ -80,6 +100,7 @@ export async function createQuote(formData: FormData): Promise<ActionResult> {
     .select('id')
     .single();
   if (error) throw error;
+  if (rfqId) await advanceRfqToQuoted(supabase, rfqId);
 
   await writeAudit({
     orgId,

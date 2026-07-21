@@ -1,6 +1,7 @@
 import { getSessionContext } from '@/lib/tenant/context';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { RFQ_STATUS, RFQ_STATUS_LABELS, type RfqStatus } from '@/lib/rfqs/lifecycle';
 import { NewRfqModal } from './new-rfq-modal';
 
 interface RfqRow {
@@ -8,7 +9,7 @@ interface RfqRow {
   origin: string;
   destination: string;
   service_type: string;
-  status: string;
+  status: RfqStatus;
   freight_details: string | null;
   pickup_at: string | null;
 }
@@ -18,8 +19,8 @@ interface ShipperRow {
   name: string;
 }
 
-function rfqBadgeClass(status: string): string {
-  return status === 'open' ? 'badge-warn' : 'badge-muted';
+function rfqBadgeClass(status: RfqStatus): string {
+  return status === RFQ_STATUS.CLOSED ? 'badge-ok' : 'badge-warn';
 }
 
 export default async function RfqsPage() {
@@ -79,7 +80,9 @@ export default async function RfqsPage() {
                 </td>
                 <td className="py-2">{r.service_type}</td>
                 <td className="py-2">
-                  <span className={`badge ${rfqBadgeClass(r.status)}`}>{r.status}</span>
+                  <span className={`badge ${rfqBadgeClass(r.status)}`}>
+                    {RFQ_STATUS_LABELS[r.status] ?? r.status}
+                  </span>
                 </td>
                 <td className="py-2">{r.pickup_at ? new Date(r.pickup_at).toLocaleString() : '—'}</td>
               </tr>
