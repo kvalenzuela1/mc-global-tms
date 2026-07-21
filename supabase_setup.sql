@@ -698,3 +698,32 @@ grant select on loads to authenticated;
 
 alter table rate_confirmations
   add constraint ratecons_org_reference_unique unique (org_id, reference);
+
+-- =============================================================================
+-- 0008_documents_storage.sql — Supabase Storage bucket + RLS for the
+-- `documents` table's `storage_path` column (FR-DOC-01).
+-- =============================================================================
+
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('documents', 'documents', false, 4718592) -- 4.5MB, matching Vercel's own request body ceiling
+on conflict (id) do nothing;
+
+drop policy if exists documents_bucket_select on storage.objects;
+create policy documents_bucket_select on storage.objects for select
+  using (
+    bucket_id = 'documents'
+    and (
+      app_is_member(((storage.foldername(name))[1])::uuid)
+      or app_user_can_access_load(((storage.foldername(name))[2])::uuid)
+    )
+  );
+
+drop policy if exists documents_bucket_insert on storage.objects;
+create policy documents_bucket_insert on storage.objects for insert
+  with check (
+    bucket_id = 'documents'
+    and (
+      app_is_member(((storage.foldername(name))[1])::uuid)
+      or app_user_can_access_load(((storage.foldername(name))[2])::uuid)
+    )
+  );

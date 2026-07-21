@@ -186,15 +186,31 @@ real data and real UI.
       and the snake_case older hand-written seed data used — this is what was
       making the Loads page margin column silently show "—" for any
       newly-created load.
-- [ ] Signed PDF generation, notifications, document centre with real uploads
-      — not started. "Electronic rate confirmations" as a checklist item
-      means the send→sign→release loop, which is what's done; the rest is
-      real remaining scope, not polish.
+- [x] `/portal/documents` + `uploadDocument` — load-scoped document upload/
+      view (`bol`/`pod`/`receipt`/`other`), wired to a real Supabase Storage
+      bucket (`0008_documents_storage.sql`) whose RLS mirrors the
+      `documents` table's own `app_is_member`/`app_user_can_access_load`
+      predicate. `coi` and `ratecon_pdf` deliberately excluded — COI is
+      carrier-scoped and `documents_select`/`write` RLS has no carrier_id
+      carve-out (ties into the open "carrier compliance thresholds / COI"
+      client decision below); `ratecon_pdf` is meant to be system-generated,
+      not manually uploaded. Uploads go through a normal server action
+      (`ActionForm`/`SubmitButton`, same as everywhere else), capped at 4MB —
+      Vercel's serverless functions have a hard ~4.5MB request body ceiling
+      regardless of Next's own config, so this is a real platform limit, not
+      an arbitrary one.
+- [ ] Signed PDF generation, notifications — not started. "Electronic rate
+      confirmations" as a checklist item means the send→sign→release loop,
+      which is what's done; the rest is real remaining scope, not polish.
 
 Verified end-to-end in a real browser: quote → book → advance to booked →
 send rate confirmation (dispatcher) → sign (carrier) → load auto-advances →
 release to driver (dispatcher) — plus driver still blocked from
-`/portal/ratecons` entirely (no RATECON_VIEW).
+`/portal/ratecons` entirely (no RATECON_VIEW). Documents verified separately:
+broker upload + signed-URL download, driver upload scoped to only their own
+assigned load (no browsing view — matches `DOCUMENT_UPLOAD` without
+`DOCUMENT_VIEW`), shipper view-only (no upload form), carrier scoped to
+their carrier's loads, oversized file rejected.
 
 ### M6 — Milestones / POD / finance
 Shipper invoice with document-match engine, factoring settlement packet UI,
