@@ -23,7 +23,9 @@ export type DimensionUnit = (typeof DIMENSION_UNITS)[number];
 
 /**
  * Real NMFC freight classes are a fixed set of 18 density tiers, not a
- * continuous "50 to 500" range.
+ * continuous "50 to 500" range. Source: NMFTA (National Motor Freight
+ * Traffic Association), https://nmfta.org/standards/classification/nmfc/ —
+ * the body that develops/publishes the NMFC standard.
  */
 export const FREIGHT_CLASSES = [
   50, 55, 60, 65, 70, 77.5, 85, 92.5, 100, 110, 125, 150, 175, 200, 250, 300, 400, 500,
@@ -52,6 +54,12 @@ export function isValidDimensionUnit(value: string): value is DimensionUnit {
  * so this deliberately doesn't pin an exact length or reject sub-codes.
  * It only catches obvious garbage (letters, punctuation) — digits,
  * whitespace, and hyphens only.
+ *
+ * If a stricter format is ever needed (e.g. a carrier integration that
+ * requires a specific item-number shape), NMFTA's classification lookup
+ * tool is the authoritative source to validate real item numbers against
+ * rather than guessing a regex: https://classitplus.nmfta.org/ (see also
+ * https://nmfta.org/standards/classification/nmfc/ for the standard itself).
  */
 const NMFC_CODE_RE = /^[\d\s-]+$/;
 

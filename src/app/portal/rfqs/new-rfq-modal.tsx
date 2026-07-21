@@ -154,6 +154,12 @@ function RfqDialog({
             </div>
           </div>
 
+          {/* step="0.01" (hundredths) suits typical freight weights/dimensions
+              entered in lb/kg/in/cm — if a future need requires finer
+              precision (e.g. lab-grade or very small parts), revisit this
+              alongside the DB columns' `numeric` (unconstrained scale)
+              storage, which already supports more decimal places than the
+              UI currently allows in. */}
           <div>
             <label className="block text-sm mb-1">Gross weight</label>
             <div className="grid grid-cols-2 gap-2">
@@ -165,6 +171,12 @@ function RfqDialog({
             </div>
           </div>
 
+          {/* L/W/H are each independently optional by design (a broker may
+              only know one dimension so far) — not a bug. See
+              0010_rfq_freight_details.sql's header comment and
+              rfqs/[id]/page.tsx's formatDimensions() for how a partial fill
+              is displayed. No all-or-nothing validation is applied here or
+              server-side. */}
           <div>
             <label className="block text-sm mb-1">Dimensions (L × W × H)</label>
             <div className="grid grid-cols-4 gap-2">

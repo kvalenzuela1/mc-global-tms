@@ -9,6 +9,14 @@
 -- length/width/height are always entered in the same unit together in
 -- practice. Freight class is a fixed 18-value NMFC density scale (50, 55,
 -- 60, ..., 500), not a continuous range.
+--
+-- length_value/width_value/height_value are each independently nullable BY
+-- DESIGN, not an oversight: a broker may know only one dimension so far
+-- (e.g. "it's about 96 inches long, exact W/H pending"). Requiring all
+-- three together would block that legitimate partial-entry case, so no
+-- all-or-nothing constraint is enforced here — the UI (new-rfq-modal.tsx)
+-- and detail display (rfqs/[id]/page.tsx's formatDimensions) both handle a
+-- partial fill explicitly rather than treating it as invalid.
 -- =============================================================================
 
 alter table rfqs
