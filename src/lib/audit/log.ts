@@ -25,6 +25,7 @@ export const AUDIT_ACTIONS = {
   RATECON_SIGNED: 'ratecon.signed',
   DRIVER_ACK: 'driver.acknowledged',
   DOCUMENT_UPLOADED: 'document.uploaded',
+  ACCESSORIAL_ADDED: 'accessorial.added',
   INVOICE_CREATED: 'invoice.created',
   SETTLEMENT_PACKET_CREATED: 'settlement.packet_created',
   ACCESS_DENIED: 'access.denied',
