@@ -26,7 +26,15 @@ async function getEmailsWithPermission(orgId: string, permission: Permission): P
   const emails: string[] = [];
   for (const holder of holders) {
     const { data: userData, error: userError } = await supabase.auth.admin.getUserById(holder.user_id);
-    if (userError || !userData.user?.email) continue;
+    if (userError || !userData.user?.email) {
+      // A membership row whose user has no reachable email is a data problem,
+      // not a normal skip — it means somebody who should have been told wasn't.
+      console.warn(
+        `notifyPermissionHolders: no email for user ${holder.user_id} (org ${orgId}, ${permission})`,
+        userError ?? null,
+      );
+      continue;
+    }
     emails.push(userData.user.email);
   }
   return emails;
@@ -45,16 +53,33 @@ export async function notifyPermissionHolders(
 ): Promise<void> {
   try {
     const emails = await getEmailsWithPermission(orgId, permission);
-    if (emails.length === 0) return;
+    if (emails.length === 0) {
+      // Nobody in the org holds the permission (or none of them have an email).
+      // Silent by design for the caller, but an operator needs to see it — the
+      // next step in the workflow now has nobody waiting on it.
+      console.warn(
+        `notifyPermissionHolders: no recipients hold ${permission} in org ${orgId} — "${content.subject}" not sent`,
+      );
+      return;
+    }
     const adapter = getNotificationAdapter();
     await Promise.all(
       emails.map((to) =>
-        adapter.sendEmail({ to, ...content }).catch(() => {
-          // Best-effort per recipient — one failed send shouldn't stop the rest.
+        adapter.sendEmail({ to, ...content }).catch((err: unknown) => {
+          // Best-effort per recipient — one failed send shouldn't stop the rest,
+          // but each failure is logged so ops can tell who was never reached.
+          console.error(
+            `notifyPermissionHolders: send failed to ${to} (org ${orgId}, ${permission}, "${content.subject}")`,
+            err,
+          );
         }),
       ),
     );
-  } catch {
+  } catch (err) {
     // Best-effort overall — never throw into the caller's business transaction.
+    console.error(
+      `notifyPermissionHolders: could not resolve recipients for ${permission} in org ${orgId} — "${content.subject}" not sent`,
+      err,
+    );
   }
 }

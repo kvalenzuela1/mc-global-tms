@@ -196,6 +196,14 @@ export async function sendRatecon(formData: FormData): Promise<ActionResult> {
         lane: `${row.origin} → ${row.destination}`,
       }),
     );
+  } else {
+    // Legitimate during the pilot — not every carrier is onboarded to the
+    // portal — but it means the rate confirmation is sitting in
+    // awaiting_carrier_signature with nobody told, so somebody has to chase it
+    // out of band. Make that visible rather than silent.
+    console.warn(
+      `sendRatecon: carrier ${row.carrier_id} has no portal org — rate confirmation ${created.reference} sent with no carrier notification`,
+    );
   }
 
   revalidatePath('/portal/ratecons');
