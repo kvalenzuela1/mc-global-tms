@@ -48,3 +48,6 @@ yarn-error.log*
 
 # delivery package snapshots — source of truth is the repo itself
 *.zip
+
+# Claude Code — per-user local permissions, not team-shared
+.claude/settings.local.json
