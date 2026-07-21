@@ -4,6 +4,7 @@ import { getSessionContext } from '@/lib/tenant/context';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { RFQ_STATUS_SEQUENCE, RFQ_STATUS_LABELS, type RfqStatus } from '@/lib/rfqs/lifecycle';
+import { PACKAGING_TYPE_LABELS, type PackagingType } from '@/lib/rfqs/freight-detail';
 
 interface RfqDetail {
   id: string;
@@ -15,6 +16,17 @@ interface RfqDetail {
   pickup_at: string | null;
   created_at: string;
   shippers: { name: string } | null;
+  packaging_type: PackagingType | null;
+  piece_count: number | null;
+  package_count: number | null;
+  gross_weight_value: number | null;
+  gross_weight_unit: string;
+  length_value: number | null;
+  width_value: number | null;
+  height_value: number | null;
+  dimension_unit: string;
+  nmfc_code: string | null;
+  freight_class: number | null;
 }
 
 interface QuoteRow {
@@ -34,6 +46,25 @@ interface LoadRow {
   reference: string;
   status: string;
   carrier_name: string | null;
+}
+
+/**
+ * L/W/H are optional independently (a broker may only know the length so
+ * far) — showing "123 × — × —" for a partial entry reads like missing data
+ * rather than an intentional partial measurement, so a partial fill gets
+ * explicit L/W/H labels instead of the compact "×" form.
+ */
+function formatDimensions(detail: RfqDetail): string {
+  const { length_value: l, width_value: w, height_value: h, dimension_unit: unit } = detail;
+  if (l == null && w == null && h == null) return '—';
+  if (l != null && w != null && h != null) {
+    return `${l} × ${w} × ${h} ${unit.toUpperCase()}`;
+  }
+  const parts: string[] = [];
+  if (l != null) parts.push(`L ${l}`);
+  if (w != null) parts.push(`W ${w}`);
+  if (h != null) parts.push(`H ${h}`);
+  return `${parts.join(', ')} ${unit.toUpperCase()}`;
 }
 
 function quoteBadgeClass(status: string): string {
@@ -84,7 +115,9 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
   const { data: rfq, error } = await supabase
     .from('rfqs')
     .select(
-      'id, origin, destination, service_type, status, freight_details, pickup_at, created_at, shippers(name)',
+      'id, origin, destination, service_type, status, freight_details, pickup_at, created_at, shippers(name), ' +
+        'packaging_type, piece_count, package_count, gross_weight_value, gross_weight_unit, ' +
+        'length_value, width_value, height_value, dimension_unit, nmfc_code, freight_class',
     )
     .eq('id', id)
     .eq('org_id', active.orgId)
@@ -143,6 +176,38 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
             <div className="flex justify-between gap-4">
               <dt className="text-muted">Freight details</dt>
               <dd className="text-right">{detail.freight_details ?? '—'}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted">Packaging</dt>
+              <dd className="text-right">
+                {detail.packaging_type ? PACKAGING_TYPE_LABELS[detail.packaging_type] : '—'}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted">Pieces / Packages</dt>
+              <dd className="text-right">
+                {detail.piece_count ?? '—'} / {detail.package_count ?? '—'}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted">Gross weight</dt>
+              <dd className="text-right">
+                {detail.gross_weight_value != null
+                  ? `${detail.gross_weight_value} ${detail.gross_weight_unit.toUpperCase()}`
+                  : '—'}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted">Dimensions (L × W × H)</dt>
+              <dd className="text-right">{formatDimensions(detail)}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted">NMFC code</dt>
+              <dd className="text-right">{detail.nmfc_code ?? '—'}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted">Freight class</dt>
+              <dd className="text-right">{detail.freight_class != null ? `Class ${detail.freight_class}` : '—'}</dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-muted">Pickup date/time</dt>

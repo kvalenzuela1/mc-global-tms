@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ActionForm } from '../_components/action-form';
 import { SubmitButton } from '../_components/submit-button';
 import { createRfq } from './actions';
+import { PACKAGING_TYPES, PACKAGING_TYPE_LABELS, FREIGHT_CLASSES } from '@/lib/rfqs/freight-detail';
 
 interface ShipperRow {
   id: string;
@@ -130,6 +131,89 @@ function RfqDialog({
             <label className="block text-sm mb-1">Freight details</label>
             <input name="freightDetails" placeholder="18,000 lbs · 26 pallets" className="input" />
           </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-sm mb-1">Packaging type</label>
+              <select name="packagingType" className="input">
+                <option value="">—</option>
+                {PACKAGING_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {PACKAGING_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm mb-1">Piece count</label>
+              <input type="number" min="0" step="1" name="pieceCount" className="input" />
+            </div>
+            <div>
+              <label className="block text-sm mb-1">Package count</label>
+              <input type="number" min="0" step="1" name="packageCount" className="input" />
+            </div>
+          </div>
+
+          {/* step="0.01" (hundredths) suits typical freight weights/dimensions
+              entered in lb/kg/in/cm — if a future need requires finer
+              precision (e.g. lab-grade or very small parts), revisit this
+              alongside the DB columns' `numeric` (unconstrained scale)
+              storage, which already supports more decimal places than the
+              UI currently allows in. */}
+          <div>
+            <label className="block text-sm mb-1">Gross weight</label>
+            <div className="grid grid-cols-2 gap-2">
+              <input type="number" min="0" step="0.01" name="grossWeightValue" className="input" />
+              <select name="grossWeightUnit" defaultValue="lb" className="input">
+                <option value="lb">LB</option>
+                <option value="kg">KG</option>
+              </select>
+            </div>
+          </div>
+
+          {/* L/W/H are each independently optional by design (a broker may
+              only know one dimension so far) — not a bug. See
+              0010_rfq_freight_details.sql's header comment and
+              rfqs/[id]/page.tsx's formatDimensions() for how a partial fill
+              is displayed. No all-or-nothing validation is applied here or
+              server-side. */}
+          <div>
+            <label className="block text-sm mb-1">Dimensions (L × W × H)</label>
+            <div className="grid grid-cols-4 gap-2">
+              <input type="number" min="0" step="0.01" name="lengthValue" placeholder="Length" className="input" />
+              <input type="number" min="0" step="0.01" name="widthValue" placeholder="Width" className="input" />
+              <input type="number" min="0" step="0.01" name="heightValue" placeholder="Height" className="input" />
+              <select name="dimensionUnit" defaultValue="in" className="input">
+                <option value="in">IN</option>
+                <option value="cm">CM</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm mb-1">NMFC code</label>
+              <input
+                name="nmfcCode"
+                placeholder="e.g. 156600 or 156600-01"
+                pattern="[\d\s-]+"
+                title="Digits, spaces, or hyphens only"
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="block text-sm mb-1">Freight class</label>
+              <select name="freightClass" className="input">
+                <option value="">—</option>
+                {FREIGHT_CLASSES.map((c) => (
+                  <option key={c} value={c}>
+                    Class {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm mb-1">Pickup date/time</label>
             <input type="datetime-local" name="pickupAt" className="input" />
