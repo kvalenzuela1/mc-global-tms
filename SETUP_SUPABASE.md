@@ -30,7 +30,7 @@ All share `DEMO_USER_PASSWORD` from `.env.local`.
 
 | Email | Becomes |
 |---|---|
-| owner@mcglobalfreightllc.com | Org Admin (M.C. Global) |
+| owner@mcglobalfreightllc.com | Org Admin (MC Global) |
 | manager@mcglobalfreightllc.com | Broker Manager |
 | dispatcher@mcglobalfreightllc.com | Broker Dispatcher |
 | dispatch@horizonfreight.example | Carrier Dispatch (Horizon) |

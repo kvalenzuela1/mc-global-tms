@@ -25,7 +25,7 @@ create or replace function app_current_user_id()
 create table organizations (
   id           uuid primary key default gen_random_uuid(),
   name         text not null,
-  -- 'broker' = M.C. Global tenant; 'carrier'/'shipper' = external partner orgs.
+  -- 'broker' = MC Global tenant; 'carrier'/'shipper' = external partner orgs.
   org_type     text not null check (org_type in ('broker','carrier','shipper')),
   mc_number    text,
   dot_number   text,

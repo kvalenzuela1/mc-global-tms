@@ -10,7 +10,7 @@ export default function LoginPage() {
     <main className="min-h-screen grid place-items-center px-6">
       <div className="panel w-full max-w-md p-8">
         <p className="text-copper-400 font-semibold text-sm uppercase tracking-wide">
-          M.C. Global Freight
+          MC Global Freight
         </p>
         <h1 className="mt-2 text-2xl font-bold">Sign in to your workspace</h1>
         <p className="mt-1 text-sm text-muted">
