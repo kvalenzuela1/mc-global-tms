@@ -41,13 +41,18 @@ const ALLOWED: Record<RfqStatus, RfqStatus[]> = {
   [RFQ_STATUS.CLOSED]: [],
 };
 
-/** FR-RFQ-02: Is the transition legal in the Phase 1 lifecycle? */
-export function canTransition(from: string, to: RfqStatus): boolean {
-  return ALLOWED[from as RfqStatus]?.includes(to) ?? false;
-}
-
 export function isValidStatus(value: string): value is RfqStatus {
   return RFQ_STATUS_SEQUENCE.includes(value as RfqStatus);
+}
+
+/**
+ * FR-RFQ-02: Is the transition legal in the Phase 1 lifecycle? Takes
+ * `RfqStatus`, not a raw string — callers holding an unvalidated string
+ * (e.g. a DB read) should narrow it with `isValidStatus` first, same as
+ * `loads/lifecycle.ts`'s `canTransition`.
+ */
+export function canTransition(from: RfqStatus, to: RfqStatus): boolean {
+  return ALLOWED[from].includes(to);
 }
 
 export const RFQ_STATUS_LABELS: Record<RfqStatus, string> = {

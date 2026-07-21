@@ -147,12 +147,24 @@ export async function createLoadFromQuote(formData: FormData): Promise<ActionRes
   // same guarded-UPDATE pattern as advanceRfqToQuoted (pricing/actions.ts) —
   // a no-op if the RFQ isn't at QUOTED for whatever reason.
   if (bookable.rfq_id) {
-    const { error: rfqError } = await supabase
+    const { data: rfqUpdated, error: rfqError } = await supabase
       .from('rfqs')
       .update({ status: RFQ_STATUS.BOOKED })
       .eq('id', bookable.rfq_id)
-      .eq('status', RFQ_STATUS.QUOTED);
+      .eq('status', RFQ_STATUS.QUOTED)
+      .select('id');
     if (rfqError) throw rfqError;
+    if (rfqUpdated && rfqUpdated.length > 0) {
+      await writeAudit({
+        orgId,
+        actorUserId: ctx.userId,
+        action: AUDIT_ACTIONS.RFQ_STATUS_CHANGED,
+        entityType: 'rfq',
+        entityId: bookable.rfq_id,
+        before: { status: RFQ_STATUS.QUOTED },
+        after: { status: RFQ_STATUS.BOOKED },
+      });
+    }
   }
 
   await writeAudit({
@@ -261,12 +273,24 @@ export async function advanceLoadStatus(formData: FormData): Promise<ActionResul
   // (signature, release, transit, delivery, invoicing) is load-internal detail
   // the RFQ's four-stage view doesn't need to track.
   if (to === LOAD_STATUS.CLOSED && row.rfq_id) {
-    const { error: rfqError } = await supabase
+    const { data: rfqUpdated, error: rfqError } = await supabase
       .from('rfqs')
       .update({ status: RFQ_STATUS.CLOSED })
       .eq('id', row.rfq_id)
-      .eq('status', RFQ_STATUS.BOOKED);
+      .eq('status', RFQ_STATUS.BOOKED)
+      .select('id');
     if (rfqError) throw rfqError;
+    if (rfqUpdated && rfqUpdated.length > 0) {
+      await writeAudit({
+        orgId,
+        actorUserId: ctx.userId,
+        action: AUDIT_ACTIONS.RFQ_STATUS_CHANGED,
+        entityType: 'rfq',
+        entityId: row.rfq_id,
+        before: { status: RFQ_STATUS.BOOKED },
+        after: { status: RFQ_STATUS.CLOSED },
+      });
+    }
   }
 
   await writeAudit({

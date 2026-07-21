@@ -19,14 +19,30 @@ import type { ActionResult } from '@/lib/actions/result';
  */
 async function advanceRfqToQuoted(
   supabase: Awaited<ReturnType<typeof getServerSupabase>>,
+  orgId: string,
+  actorUserId: string,
   rfqId: string,
 ): Promise<void> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('rfqs')
     .update({ status: RFQ_STATUS.QUOTED })
     .eq('id', rfqId)
-    .eq('status', RFQ_STATUS.OPEN);
+    .eq('status', RFQ_STATUS.OPEN)
+    .select('id');
   if (error) throw error;
+  // Only audit a real transition — `.select('id')` comes back empty on the
+  // guarded no-op (RFQ already past OPEN), and a no-op isn't an event.
+  if (data && data.length > 0) {
+    await writeAudit({
+      orgId,
+      actorUserId,
+      action: AUDIT_ACTIONS.RFQ_STATUS_CHANGED,
+      entityType: 'rfq',
+      entityId: rfqId,
+      before: { status: RFQ_STATUS.OPEN },
+      after: { status: RFQ_STATUS.QUOTED },
+    });
+  }
 }
 
 /**
@@ -73,7 +89,7 @@ export async function createQuote(formData: FormData): Promise<ActionResult> {
       .from('quotes')
       .insert({ ...base, is_override: false, status: 'approved' });
     if (error) throw error;
-    if (rfqId) await advanceRfqToQuoted(supabase, rfqId);
+    if (rfqId) await advanceRfqToQuoted(supabase, orgId, ctx.userId, rfqId);
     revalidatePath('/portal/pricing');
     return { ok: true };
   }
@@ -100,7 +116,7 @@ export async function createQuote(formData: FormData): Promise<ActionResult> {
     .select('id')
     .single();
   if (error) throw error;
-  if (rfqId) await advanceRfqToQuoted(supabase, rfqId);
+  if (rfqId) await advanceRfqToQuoted(supabase, orgId, ctx.userId, rfqId);
 
   await writeAudit({
     orgId,

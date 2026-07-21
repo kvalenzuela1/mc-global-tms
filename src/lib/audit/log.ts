@@ -15,6 +15,7 @@ import { getServiceRoleSupabase } from '@/lib/supabase/server';
 /** Canonical audited actions. Extend as milestones add flows. */
 export const AUDIT_ACTIONS = {
   LOAD_TRANSITION: 'load.transition',
+  RFQ_STATUS_CHANGED: 'rfq.status_changed',
   COMPLIANCE_CHECK: 'compliance.check',
   COMPLIANCE_OVERRIDE: 'compliance.override',
   PRICING_OVERRIDE: 'pricing.override',

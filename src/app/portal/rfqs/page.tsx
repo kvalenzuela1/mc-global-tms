@@ -20,7 +20,9 @@ interface ShipperRow {
 }
 
 function rfqBadgeClass(status: RfqStatus): string {
-  return status === RFQ_STATUS.CLOSED ? 'badge-ok' : 'badge-warn';
+  if (status === RFQ_STATUS.CLOSED) return 'badge-ok';
+  if (status === RFQ_STATUS.QUOTED) return 'badge-muted';
+  return 'badge-warn'; // open (needs a quote), booked (active load in motion)
 }
 
 export default async function RfqsPage() {
