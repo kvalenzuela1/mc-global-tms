@@ -220,7 +220,7 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
                   )}
                   {load && (
                     <p className="text-xs mt-1">
-                      <Link href="/portal/loads" className="text-copper-400 hover:text-copper-300">
+                      <Link href={`/portal/loads/${load.id}`} className="text-copper-400 hover:text-copper-300">
                         {load.reference}
                       </Link>{' '}
                       · {load.carrier_name ?? 'No carrier'} ·{' '}

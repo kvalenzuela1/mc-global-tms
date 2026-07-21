@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { requirePermission } from '@/lib/auth/guard';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { PERMISSIONS } from '@/lib/rbac/permissions';
@@ -208,8 +209,12 @@ export async function createLoadFromQuote(formData: FormData): Promise<ActionRes
     }),
   );
 
+  // Land the broker on the load they just booked — its detail page is where
+  // the next steps (send rate confirmation, advance status) live. redirect()
+  // throws NEXT_REDIRECT, so nothing after it runs and the ActionResult return
+  // is never reached on the success path.
   revalidatePath('/portal/loads');
-  return { ok: true };
+  redirect(`/portal/loads/${created.id}`);
 }
 
 interface LoadRow {
@@ -342,6 +347,7 @@ export async function advanceLoadStatus(formData: FormData): Promise<ActionResul
   }
 
   revalidatePath('/portal/loads');
+  revalidatePath(`/portal/loads/${loadId}`);
   return { ok: true };
 }
 
@@ -398,5 +404,6 @@ export async function addAccessorial(formData: FormData): Promise<ActionResult> 
   });
 
   revalidatePath('/portal/loads');
+  revalidatePath(`/portal/loads/${loadId}`);
   return { ok: true };
 }
