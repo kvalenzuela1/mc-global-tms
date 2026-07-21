@@ -14,11 +14,29 @@ interface BookedLoadRow {
   commercial_snapshot: Record<string, unknown> | null;
 }
 
+interface RateconContentSnapshot {
+  origin?: string;
+  destination?: string;
+  service_type?: string;
+  carrier_rate_cents?: number;
+  freight_details?: string | null;
+  pickup_at?: string | null;
+  broker?: { name?: string; mc_number?: string | null; dot_number?: string | null };
+  carrier?: { name?: string; mc_number?: string | null; dot_number?: string | null };
+}
+
 interface RateconRow {
   id: string;
   reference: string;
   status: string;
-  content_snapshot: { origin?: string; destination?: string; carrier_rate_cents?: number } | null;
+  content_snapshot: RateconContentSnapshot | null;
+}
+
+interface SignatureRow {
+  rate_confirmation_id: string;
+  signer_name: string;
+  signer_title: string | null;
+  signed_at: string;
 }
 
 function rateconBadgeClass(status: string): string {
@@ -62,6 +80,20 @@ export default async function RateconsPage() {
     .order('created_at', { ascending: false });
   if (error) throw error;
   const ratecons = (rateconData as RateconRow[]) ?? [];
+
+  const signatureByRatecon = new Map<string, SignatureRow>();
+  if (ratecons.length > 0) {
+    const { data: signatureData } = await supabase
+      .from('signatures')
+      .select('rate_confirmation_id, signer_name, signer_title, signed_at')
+      .in(
+        'rate_confirmation_id',
+        ratecons.map((rc) => rc.id),
+      );
+    for (const s of (signatureData as SignatureRow[]) ?? []) {
+      signatureByRatecon.set(s.rate_confirmation_id, s);
+    }
+  }
 
   return (
     <div>
@@ -127,6 +159,8 @@ export default async function RateconsPage() {
                 <span className={`badge ${rateconBadgeClass(rc.status)}`}>{rc.status}</span>
               </div>
 
+              <RateconDocument snapshot={rc.content_snapshot} reference={rc.reference} signature={signatureByRatecon.get(rc.id)} />
+
               {canSign && rc.status === 'sent' && (
                 <ActionForm action={signRatecon} className="mt-3 space-y-3 max-w-md">
                   <input type="hidden" name="orgId" value={active.orgId} />
@@ -157,6 +191,94 @@ export default async function RateconsPage() {
         </ul>
       </div>
     </div>
+  );
+}
+
+/**
+ * Standard industry rate-confirmation layout (broker/carrier identity blocks,
+ * shipment details, rate line, signature) — modeled on the field structure
+ * used by most brokerages (TQL's format among them), not any single broker's
+ * proprietary template. Payment terms beyond the linehaul rate (Quick Pay %,
+ * factoring language, detention) are an open client decision (see CLAUDE.md)
+ * and are intentionally left out rather than invented.
+ */
+function RateconDocument({
+  snapshot,
+  reference,
+  signature,
+}: {
+  snapshot: RateconContentSnapshot | null;
+  reference: string;
+  signature: SignatureRow | undefined;
+}) {
+  if (!snapshot) return null;
+  const rate =
+    typeof snapshot.carrier_rate_cents === 'number'
+      ? `$${(snapshot.carrier_rate_cents / 100).toFixed(2)}`
+      : '—';
+
+  return (
+    <details className="mt-3">
+      <summary className="cursor-pointer text-xs text-copper-500">View rate confirmation</summary>
+      <div className="mt-3 rounded-lg border border-line p-4 text-sm space-y-4">
+        <div className="flex items-start justify-between gap-4 border-b border-line pb-3">
+          <div>
+            <p className="font-semibold">{snapshot.broker?.name ?? 'MC Global Freight'}</p>
+            <p className="text-xs text-muted mt-0.5">
+              MC# {snapshot.broker?.mc_number ?? '—'} · DOT# {snapshot.broker?.dot_number ?? '—'}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="font-semibold">Rate Confirmation {reference}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-xs text-muted uppercase tracking-wide">Carrier</p>
+            <p className="mt-1">{snapshot.carrier?.name ?? '—'}</p>
+            <p className="text-xs text-muted">
+              MC# {snapshot.carrier?.mc_number ?? '—'} · DOT# {snapshot.carrier?.dot_number ?? '—'}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted uppercase tracking-wide">Equipment / Service</p>
+            <p className="mt-1">{snapshot.service_type ?? '—'}</p>
+          </div>
+        </div>
+
+        <div>
+          <p className="text-xs text-muted uppercase tracking-wide">Shipment</p>
+          <p className="mt-1">
+            {snapshot.origin} → {snapshot.destination}
+          </p>
+          <p className="text-xs text-muted mt-0.5">
+            Pickup: {snapshot.pickup_at ? new Date(snapshot.pickup_at).toLocaleString() : '—'}
+          </p>
+          {snapshot.freight_details && (
+            <p className="text-xs text-muted mt-0.5">Freight: {snapshot.freight_details}</p>
+          )}
+        </div>
+
+        <div className="border-t border-line pt-3 flex items-center justify-between">
+          <p className="text-xs text-muted uppercase tracking-wide">Carrier Rate</p>
+          <p className="font-semibold">{rate}</p>
+        </div>
+
+        <div className="border-t border-line pt-3">
+          <p className="text-xs text-muted uppercase tracking-wide">Acceptance</p>
+          {signature ? (
+            <p className="mt-1 text-xs">
+              Signed by {signature.signer_name}
+              {signature.signer_title ? `, ${signature.signer_title}` : ''} on{' '}
+              {new Date(signature.signed_at).toLocaleString()}
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-muted">Awaiting carrier signature.</p>
+          )}
+        </div>
+      </div>
+    </details>
   );
 }
 
