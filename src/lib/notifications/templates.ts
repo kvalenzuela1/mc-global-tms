@@ -75,3 +75,37 @@ export function loadDeliveredReadyToInvoiceEmail(input: {
     templateVersion: '1',
   };
 }
+
+export function rateconReadyToSignEmail(input: {
+  rateconReference: string;
+  loadReference: string;
+  lane: string;
+}): EmailContent {
+  return {
+    subject: `Rate confirmation ${input.rateconReference} is ready to sign`,
+    html: wrap(
+      `<p>A rate confirmation for <strong>${input.loadReference}</strong> (${input.lane}) has been sent ` +
+        `and is awaiting your signature.</p>` +
+        `<p>Review and sign it from the Rate Confirmations page.</p>`,
+    ),
+    templateKey: 'ratecon_ready_to_sign',
+    templateVersion: '1',
+  };
+}
+
+export function rateconSignedReadyForReleaseEmail(input: {
+  loadReference: string;
+  lane: string;
+  carrierName: string;
+}): EmailContent {
+  return {
+    subject: `${input.loadReference} — rate confirmation signed, ready to release`,
+    html: wrap(
+      `<p><strong>${input.carrierName}</strong> has signed the rate confirmation for ` +
+        `<strong>${input.loadReference}</strong> (${input.lane}).</p>` +
+        `<p>It's ready to release to the driver.</p>`,
+    ),
+    templateKey: 'ratecon_signed_ready_for_release',
+    templateVersion: '1',
+  };
+}

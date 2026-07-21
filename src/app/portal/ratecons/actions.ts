@@ -1,5 +1,6 @@
 'use server';
 
+import { randomUUID } from 'node:crypto';
 import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { requirePermission } from '@/lib/auth/guard';
@@ -7,9 +8,13 @@ import { getServerSupabase, getServiceRoleSupabase } from '@/lib/supabase/server
 import { PERMISSIONS } from '@/lib/rbac/permissions';
 import { AUDIT_ACTIONS, writeAudit } from '@/lib/audit/log';
 import { nextRateconReference } from '@/lib/ratecons/reference';
+import { renderRateconPdf } from '@/lib/ratecons/pdf';
 import { LOAD_STATUS } from '@/lib/loads/lifecycle';
-import { buildSignatureEvidence, hashDocument } from '@/lib/signatures/evidence';
+import { buildSignatureEvidence, hashDocument, ESIGN_DISCLAIMER } from '@/lib/signatures/evidence';
+import { hashBytes } from '@/lib/documents/hash';
 import { readSnapshotCents } from '@/lib/pricing/snapshot';
+import { notifyPermissionHolders } from '@/lib/notifications/notify.server';
+import { rateconReadyToSignEmail, rateconSignedReadyForReleaseEmail } from '@/lib/notifications/templates';
 import type { ActionResult } from '@/lib/actions/result';
 
 const UNIQUE_VIOLATION = '23505';
@@ -83,7 +88,7 @@ export async function sendRatecon(formData: FormData): Promise<ActionResult> {
 
   const { data: carrier, error: carrierError } = await supabase
     .from('carriers')
-    .select('name, mc_number, dot_number')
+    .select('name, mc_number, dot_number, carrier_org_id')
     .eq('id', row.carrier_id)
     .single();
   if (carrierError) throw carrierError;
@@ -178,6 +183,21 @@ export async function sendRatecon(formData: FormData): Promise<ActionResult> {
     after: { reference: created.reference, loadId, carrierId: row.carrier_id },
   });
 
+  // FR-NOTIF-01: tell whoever can actually sign it — if the carrier has no
+  // portal org yet (carrier_org_id is null), there's nobody to notify.
+  const carrierOrgId = (carrier as { carrier_org_id: string | null }).carrier_org_id;
+  if (carrierOrgId) {
+    await notifyPermissionHolders(
+      carrierOrgId,
+      PERMISSIONS.RATECON_SIGN,
+      rateconReadyToSignEmail({
+        rateconReference: created.reference,
+        loadReference: row.reference,
+        lane: `${row.origin} → ${row.destination}`,
+      }),
+    );
+  }
+
   revalidatePath('/portal/ratecons');
   revalidatePath('/portal/loads');
   return { ok: true };
@@ -187,9 +207,25 @@ interface SignableRatecon {
   id: string;
   org_id: string;
   load_id: string;
+  reference: string;
   status: string;
   version: number;
   content_snapshot: Record<string, unknown>;
+}
+
+/** Defensive shape for `content_snapshot` — same fields `sendRatecon` writes,
+ * cast defensively since the column is untyped jsonb (mirrors the same
+ * defensiveness `ratecons/page.tsx`'s `RateconContentSnapshot` already uses). */
+interface RateconContentSnapshotShape {
+  reference?: string;
+  origin?: string;
+  destination?: string;
+  service_type?: string;
+  carrier_rate_cents?: number;
+  freight_details?: string | null;
+  pickup_at?: string | null;
+  broker?: { name?: string; mc_number?: string | null; dot_number?: string | null };
+  carrier?: { name?: string; mc_number?: string | null; dot_number?: string | null };
 }
 
 /**
@@ -214,7 +250,7 @@ export async function signRatecon(formData: FormData): Promise<ActionResult> {
   const supabase = await getServerSupabase();
   const { data: ratecon, error: rateconError } = await supabase
     .from('rate_confirmations')
-    .select('id, org_id, load_id, status, version, content_snapshot')
+    .select('id, org_id, load_id, reference, status, version, content_snapshot')
     .eq('id', rateconId)
     .single();
   if (rateconError) throw rateconError;
@@ -301,7 +337,102 @@ export async function signRatecon(formData: FormData): Promise<ActionResult> {
     after: { signerUserId: ctx.userId, signedAt: evidence.signedAt },
   });
 
+  const snapshot = rc.content_snapshot as RateconContentSnapshotShape;
+
+  // FR-RC-08: render + store the signed PDF. Best-effort — by this point the
+  // signature (the actual FR-RC-06/07 legal evidence) and the ratecon/load
+  // status transitions above are already durably committed, and nothing here
+  // is unrecoverable (content_snapshot + the signatures row persist, so the
+  // PDF can be regenerated later). Turning an already-successful signature
+  // into a user-facing error over a rendering/storage failure would be
+  // misleading, so this mirrors notifyPermissionHolders's "never block the
+  // business transaction" convention — logged, not silent, since (unlike a
+  // missed email) there's currently no other way to notice a missing PDF.
+  try {
+    const pdfBytes = await renderRateconPdf({
+      reference: rc.reference,
+      version: rc.version,
+      origin: snapshot.origin ?? '',
+      destination: snapshot.destination ?? '',
+      serviceType: snapshot.service_type ?? '',
+      carrierRateCents: snapshot.carrier_rate_cents ?? 0,
+      freightDetails: snapshot.freight_details ?? null,
+      pickupAt: snapshot.pickup_at ?? null,
+      broker: {
+        name: snapshot.broker?.name ?? '',
+        mcNumber: snapshot.broker?.mc_number ?? null,
+        dotNumber: snapshot.broker?.dot_number ?? null,
+      },
+      carrier: {
+        name: snapshot.carrier?.name ?? '',
+        mcNumber: snapshot.carrier?.mc_number ?? null,
+        dotNumber: snapshot.carrier?.dot_number ?? null,
+      },
+      signature: {
+        signerName: evidence.signerName,
+        signerTitle: evidence.signerTitle,
+        signedAt: evidence.signedAt,
+        ipAddress: evidence.ipAddress,
+        documentHash: evidence.documentHash,
+      },
+      disclaimer: ESIGN_DISCLAIMER,
+    });
+
+    // Same {org_id}/{load_id}/{uuid}-{filename} convention and bucket as
+    // uploadDocument (documents/actions.ts) — doc_type/storage RLS is
+    // already generic to org/load, not gated by doc type, so no new bucket
+    // or policy is needed. serviceRole (not the RLS-bound client) for
+    // consistency with the rest of this function, even though
+    // documents_write RLS is broader than ratecons_write/loads_write and
+    // might allow the RLS-bound client here too.
+    const path = `${rc.org_id}/${rc.load_id}/${randomUUID()}-ratecon-${rc.id}.pdf`;
+    const { error: uploadError } = await serviceRole.storage
+      .from('documents')
+      .upload(path, pdfBytes, { contentType: 'application/pdf' });
+    if (uploadError) throw uploadError;
+
+    const { data: docRow, error: docInsertError } = await serviceRole
+      .from('documents')
+      .insert({
+        org_id: rc.org_id,
+        load_id: rc.load_id,
+        doc_type: 'ratecon_pdf',
+        storage_path: path,
+        file_hash: hashBytes(pdfBytes),
+        uploaded_by: null,
+      })
+      .select('id')
+      .single();
+    if (docInsertError) {
+      await serviceRole.storage.from('documents').remove([path]).catch(() => {});
+      throw docInsertError;
+    }
+
+    await writeAudit({
+      orgId: rc.org_id,
+      actorUserId: ctx.userId,
+      action: AUDIT_ACTIONS.DOCUMENT_UPLOADED,
+      entityType: 'document',
+      entityId: docRow.id,
+      after: { loadId: rc.load_id, docType: 'ratecon_pdf', storagePath: path, rateconId: rc.id },
+    });
+  } catch (err) {
+    console.error(`signRatecon: PDF generation/storage failed for rate confirmation ${rc.id}`, err);
+  }
+
+  // FR-NOTIF-01: the load is now ready to release — tell whoever can do that.
+  await notifyPermissionHolders(
+    rc.org_id,
+    PERMISSIONS.LOAD_RELEASE_DRIVER,
+    rateconSignedReadyForReleaseEmail({
+      loadReference: snapshot.reference ?? rc.reference,
+      lane: `${snapshot.origin ?? ''} → ${snapshot.destination ?? ''}`,
+      carrierName: snapshot.carrier?.name ?? '',
+    }),
+  );
+
   revalidatePath('/portal/ratecons');
   revalidatePath('/portal/loads');
+  revalidatePath('/portal/documents');
   return { ok: true };
 }
