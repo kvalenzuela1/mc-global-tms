@@ -49,5 +49,8 @@ yarn-error.log*
 # delivery package snapshots — source of truth is the repo itself
 *.zip
 
-# Claude Code — per-user local state (settings, worktrees, plans), not team-shared
-.claude/
+# Claude Code — per-user local state, not team-shared (.claude/skills/ IS
+# shared/tracked — e.g. .claude/skills/pr/SKILL.md — so this is scoped, not
+# a blanket .claude/ ignore)
+.claude/settings.local.json
+.claude/worktrees/
