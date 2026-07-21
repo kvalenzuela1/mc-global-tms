@@ -1,9 +1,7 @@
 import { getSessionContext } from '@/lib/tenant/context';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { ActionForm } from '../_components/action-form';
-import { SubmitButton } from '../_components/submit-button';
-import { createRfq } from './actions';
+import { NewRfqModal } from './new-rfq-modal';
 
 interface RfqRow {
   id: string;
@@ -54,47 +52,13 @@ export default async function RfqsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold">RFQs & Quotes</h1>
-      <p className="text-muted mt-1">Requests for quote from shippers.</p>
-
-      {canCreate && (
-        <ActionForm action={createRfq} className="panel mt-6 p-6 space-y-4 max-w-xl">
-          <input type="hidden" name="orgId" value={active.orgId} />
-          <h2 className="font-semibold">New RFQ</h2>
-          <div>
-            <label className="block text-sm mb-1">Shipper</label>
-            <select name="shipperId" className="input">
-              <option value="">— Unassigned —</option>
-              {shippers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm mb-1">Origin</label>
-              <input name="origin" required className="input" />
-            </div>
-            <div>
-              <label className="block text-sm mb-1">Destination</label>
-              <input name="destination" required className="input" />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm mb-1">Freight details</label>
-            <input name="freightDetails" placeholder="18,000 lbs · 26 pallets" className="input" />
-          </div>
-          <div>
-            <label className="block text-sm mb-1">Pickup date/time</label>
-            <input type="datetime-local" name="pickupAt" className="input" />
-          </div>
-          <SubmitButton className="btn-copper px-4 py-2" pendingLabel="Saving…">
-            Create RFQ
-          </SubmitButton>
-        </ActionForm>
-      )}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">RFQs & Quotes</h1>
+          <p className="text-muted mt-1">Requests for quote from shippers.</p>
+        </div>
+        {canCreate && <NewRfqModal orgId={active.orgId} shippers={shippers} />}
+      </div>
 
       <div className="panel mt-6 p-6">
         <h2 className="font-semibold">Open RFQs</h2>

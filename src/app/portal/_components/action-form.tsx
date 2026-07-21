@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useEffect } from 'react';
 import type { ActionResult } from '@/lib/actions/result';
 
 /**
@@ -19,15 +19,23 @@ export function ActionForm({
   action,
   className,
   children,
+  onSuccess,
 }: {
   action: (formData: FormData) => Promise<ActionResult>;
   className?: string;
   children: React.ReactNode;
+  /** Fires once per successful submission — e.g. closing a modal that wraps this form. */
+  onSuccess?: () => void;
 }) {
   const [state, formAction] = useActionState<ActionResult | null, FormData>(
     (_prev, formData) => action(formData),
     null,
   );
+
+  useEffect(() => {
+    if (state?.ok) onSuccess?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
 
   return (
     <form action={formAction} className={className}>
