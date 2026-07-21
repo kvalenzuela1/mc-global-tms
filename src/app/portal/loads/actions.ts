@@ -16,6 +16,7 @@ import { isQuoteReleasable } from '@/lib/pricing/override';
 import { getCarrierComplianceResult } from '@/lib/compliance/policy.server';
 import { evaluateComplianceOverride } from '@/lib/compliance/override';
 import type { ComplianceResult } from '@/lib/compliance/gate';
+import { RFQ_STATUS } from '@/lib/rfqs/lifecycle';
 import type { ActionResult } from '@/lib/actions/result';
 
 const NOT_REVIEWED_RESULT: ComplianceResult = {
@@ -142,6 +143,30 @@ export async function createLoadFromQuote(formData: FormData): Promise<ActionRes
     .eq('id', quoteId);
   if (linkError) throw linkError;
 
+  // FR-RFQ-02: booking a quote into a load advances its RFQ QUOTED -> BOOKED,
+  // same guarded-UPDATE pattern as advanceRfqToQuoted (pricing/actions.ts) —
+  // a no-op if the RFQ isn't at QUOTED for whatever reason.
+  if (bookable.rfq_id) {
+    const { data: rfqUpdated, error: rfqError } = await supabase
+      .from('rfqs')
+      .update({ status: RFQ_STATUS.BOOKED })
+      .eq('id', bookable.rfq_id)
+      .eq('status', RFQ_STATUS.QUOTED)
+      .select('id');
+    if (rfqError) throw rfqError;
+    if (rfqUpdated && rfqUpdated.length > 0) {
+      await writeAudit({
+        orgId,
+        actorUserId: ctx.userId,
+        action: AUDIT_ACTIONS.RFQ_STATUS_CHANGED,
+        entityType: 'rfq',
+        entityId: bookable.rfq_id,
+        before: { status: RFQ_STATUS.QUOTED },
+        after: { status: RFQ_STATUS.BOOKED },
+      });
+    }
+  }
+
   await writeAudit({
     orgId,
     actorUserId: ctx.userId,
@@ -170,6 +195,7 @@ interface LoadRow {
   id: string;
   status: LoadStatus;
   carrier_id: string | null;
+  rfq_id: string | null;
 }
 
 /** FR-LD-02/FR-RC-05/FR-CMP-01: only a legal next status, gated on a signed rate-con and carrier compliance where required. */
@@ -183,7 +209,7 @@ export async function advanceLoadStatus(formData: FormData): Promise<ActionResul
   const supabase = await getServerSupabase();
   const { data: load, error: loadError } = await supabase
     .from('loads_data')
-    .select('id, status, carrier_id')
+    .select('id, status, carrier_id, rfq_id')
     .eq('id', loadId)
     .eq('org_id', orgId)
     .single();
@@ -241,6 +267,31 @@ export async function advanceLoadStatus(formData: FormData): Promise<ActionResul
 
   const { error } = await supabase.from('loads_data').update({ status: to }).eq('id', loadId);
   if (error) throw error;
+
+  // FR-RFQ-02: the load reaching its own final status (CLOSED) is what
+  // advances the RFQ BOOKED -> CLOSED — everything between BOOKED and here
+  // (signature, release, transit, delivery, invoicing) is load-internal detail
+  // the RFQ's four-stage view doesn't need to track.
+  if (to === LOAD_STATUS.CLOSED && row.rfq_id) {
+    const { data: rfqUpdated, error: rfqError } = await supabase
+      .from('rfqs')
+      .update({ status: RFQ_STATUS.CLOSED })
+      .eq('id', row.rfq_id)
+      .eq('status', RFQ_STATUS.BOOKED)
+      .select('id');
+    if (rfqError) throw rfqError;
+    if (rfqUpdated && rfqUpdated.length > 0) {
+      await writeAudit({
+        orgId,
+        actorUserId: ctx.userId,
+        action: AUDIT_ACTIONS.RFQ_STATUS_CHANGED,
+        entityType: 'rfq',
+        entityId: row.rfq_id,
+        before: { status: RFQ_STATUS.BOOKED },
+        after: { status: RFQ_STATUS.CLOSED },
+      });
+    }
+  }
 
   await writeAudit({
     orgId,
