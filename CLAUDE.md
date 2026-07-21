@@ -49,7 +49,11 @@ These have each already caused a failure. Do not relearn them.
    test. Use `as const` objects instead of enums.
 
 7. **New test files must be added to the `test:offline` script list in
-   `package.json`** or they silently never run.
+   `package.json`** or they silently never run. The offline CI job runs with
+   **no `npm ci`** — a test that reaches any third-party package fails there
+   with `ERR_MODULE_NOT_FOUND` even though it passes locally. Those few go in
+   the `test:deps` list instead (currently only `ratecon-pdf.test.ts`, for
+   `pdf-lib`), which CI runs in the build job after `npm ci`.
 
 8. **Keep domain logic free of Next/Supabase imports** so it stays offline-
    testable. Pattern to follow: `pricing/calc.ts`, `loads/lifecycle.ts`,

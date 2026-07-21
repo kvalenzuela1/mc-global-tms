@@ -6,9 +6,11 @@
  *             (src/lib/signatures/evidence.ts) into a real, storable PDF once
  *             a carrier signs — the last piece of M5's send/sign/release loop.
  *
- * No Next/Supabase imports — pure input in, PDF bytes out — so this is
- * testable under `npm run test:offline` alongside the other domain modules
- * (pricing/calc.ts, loads/lifecycle.ts, pricing/override.ts).
+ * No Next/Supabase imports — pure input in, PDF bytes out. It does depend on
+ * `pdf-lib`, though, so unlike the other domain modules (pricing/calc.ts,
+ * loads/lifecycle.ts, pricing/override.ts) it cannot run under
+ * `npm run test:offline`, which deliberately installs nothing. Its test lives
+ * in the `test:deps` vitest list instead — see package.json and CI's build job.
  *
  * Layout mirrors the HTML rate-confirmation view in
  * src/app/portal/ratecons/page.tsx (RateconDocument): broker/carrier
