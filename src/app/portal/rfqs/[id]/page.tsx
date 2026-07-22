@@ -3,10 +3,12 @@ import { notFound } from 'next/navigation';
 import { getSessionContext } from '@/lib/tenant/context';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { getServerSupabase } from '@/lib/supabase/server';
-import { RFQ_STATUS_SEQUENCE, RFQ_STATUS_LABELS, type RfqStatus } from '@/lib/rfqs/lifecycle';
+import { RFQ_STATUS, RFQ_STATUS_SEQUENCE, RFQ_STATUS_LABELS, type RfqStatus } from '@/lib/rfqs/lifecycle';
 import { PACKAGING_TYPE_LABELS, type PackagingType } from '@/lib/rfqs/freight-detail';
+import { resolveRfqRequiredAction } from '@/lib/workflow/required-action';
 import { Breadcrumb } from '../../_components/breadcrumb';
 import { LifecycleTimeline } from '../../_components/lifecycle-timeline';
+import { RequiredActionRail } from '../../_components/required-action-rail';
 import { StatusBadge, STATUS_FACET } from '../../_components/status-badge';
 
 interface RfqDetail {
@@ -118,6 +120,17 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
     loadsById = new Map(((loadData as LoadRow[]) ?? []).map((l) => [l.id, l]));
   }
 
+  // §9 required-action rail. The RFQ resolver only describes the create-quote
+  // step, so it's meaningful only while the RFQ is still open — once quoted or
+  // booked, "what's next" belongs to the quote/load, reachable from the list.
+  const requiredAction =
+    detail.status === RFQ_STATUS.OPEN
+      ? resolveRfqRequiredAction({
+          weightLbs: detail.gross_weight_value,
+          freightClass: detail.freight_class != null ? String(detail.freight_class) : null,
+        })
+      : null;
+
   return (
     <div>
       <Breadcrumb
@@ -139,15 +152,17 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
         <StatusBadge facet={STATUS_FACET.RFQ} value={detail.status} className="whitespace-nowrap" />
       </div>
 
-      <div className="panel mt-6 p-6">
-        <LifecycleTimeline
-          sequence={RFQ_STATUS_SEQUENCE}
-          labels={RFQ_STATUS_LABELS}
-          current={detail.status}
-        />
-      </div>
+      <div className={`mt-6 grid gap-6 ${requiredAction ? 'lg:grid-cols-[1fr_320px]' : ''}`}>
+        <div className="min-w-0 space-y-6">
+          <div className="panel p-6">
+            <LifecycleTimeline
+              sequence={RFQ_STATUS_SEQUENCE}
+              labels={RFQ_STATUS_LABELS}
+              current={detail.status}
+            />
+          </div>
 
-      <div className="grid lg:grid-cols-2 gap-6 mt-6">
+          <div className="grid lg:grid-cols-2 gap-6">
         <div className="panel p-6">
           <h2 className="font-semibold">RFQ details</h2>
           <dl className="mt-4 space-y-3 text-sm">
@@ -232,6 +247,9 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
             })}
           </ul>
         </div>
+          </div>
+        </div>
+        {requiredAction && <RequiredActionRail action={requiredAction} rfqId={detail.id} />}
       </div>
     </div>
   );

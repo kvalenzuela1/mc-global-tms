@@ -3,7 +3,9 @@ import { notFound } from 'next/navigation';
 import { getSessionContext } from '@/lib/tenant/context';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { getServerSupabase } from '@/lib/supabase/server';
+import { resolveQuoteRequiredAction, type RequiredAction } from '@/lib/workflow/required-action';
 import { Breadcrumb } from '../../_components/breadcrumb';
+import { RequiredActionRail } from '../../_components/required-action-rail';
 import { StatusBadge, STATUS_FACET } from '../../_components/status-badge';
 
 interface QuoteDetail {
@@ -82,6 +84,32 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
     load = (loadData as LoadRow | null) ?? null;
   }
 
+  // §9 required-action rail. Phase-1 quotes have no customer send/accept
+  // lifecycle columns, so only the two states that map faithfully to real
+  // actions get a rail: an override pending a second manager's approval, and an
+  // approved-and-not-yet-booked quote ready to convert. Once a load exists (or
+  // the quote was rejected) the "what's next" belongs elsewhere, so no rail.
+  let requiredAction: RequiredAction | null = null;
+  if (!detail.load_id) {
+    if (detail.status === 'pending_approval') {
+      requiredAction = resolveQuoteRequiredAction({
+        overrideStatus: 'pending',
+        accepted: false,
+        validUntil: null,
+        asOf: new Date(),
+        sent: false,
+      });
+    } else if (detail.status === 'approved') {
+      requiredAction = resolveQuoteRequiredAction({
+        overrideStatus: detail.is_override ? 'approved' : 'none',
+        accepted: true,
+        validUntil: null,
+        asOf: new Date(),
+        sent: true,
+      });
+    }
+  }
+
   return (
     <div>
       <Breadcrumb
@@ -124,7 +152,8 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6 mt-6">
+      <div className={`mt-6 grid gap-6 ${requiredAction ? 'lg:grid-cols-[1fr_320px]' : ''}`}>
+        <div className="min-w-0 grid lg:grid-cols-2 gap-6">
         <div className="panel p-6">
           <h2 className="font-semibold">Pricing breakdown</h2>
           <dl className="mt-4 space-y-3 text-sm">
@@ -202,6 +231,8 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
             </div>
           </dl>
         </div>
+        </div>
+        {requiredAction && <RequiredActionRail action={requiredAction} />}
       </div>
     </div>
   );

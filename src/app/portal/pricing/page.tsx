@@ -24,7 +24,12 @@ interface PendingQuote {
   created_at: string;
 }
 
-export default async function PricingPage() {
+export default async function PricingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ rfq?: string }>;
+}) {
+  const { rfq: rfqParam } = await searchParams;
   const ctx = await getSessionContext();
   const active = ctx?.active ?? ctx?.memberships[0] ?? null;
   if (!active) return null;
@@ -71,7 +76,7 @@ export default async function PricingPage() {
         <input type="hidden" name="orgId" value={active.orgId} />
         <div>
           <label className="block text-sm mb-1">Link to RFQ (optional)</label>
-          <select name="rfqId" className="input">
+          <select name="rfqId" className="input" defaultValue={rfqParam ?? ''}>
             <option value="">— None —</option>
             {rfqs.map((r) => (
               <option key={r.id} value={r.id}>
