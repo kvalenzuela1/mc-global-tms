@@ -1,10 +1,8 @@
 import Link from 'next/link';
 import { getSessionContext } from '@/lib/tenant/context';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
-import { ROLES } from '@/lib/rbac/roles';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { type RfqStatus } from '@/lib/rfqs/lifecycle';
-import { NewRfqModal } from './new-rfq-modal';
 import { StatusBadge, STATUS_FACET } from '../_components/status-badge';
 
 interface RfqRow {
@@ -15,11 +13,6 @@ interface RfqRow {
   status: RfqStatus;
   freight_details: string | null;
   pickup_at: string | null;
-}
-
-interface ShipperRow {
-  id: string;
-  name: string;
 }
 
 export default async function RfqsPage() {
@@ -43,16 +36,6 @@ export default async function RfqsPage() {
   if (error) throw error;
 
   const canCreate = can(active.role, PERMISSIONS.RFQ_CREATE);
-  const isShipper = active.role === ROLES.SHIPPER;
-  let shippers: ShipperRow[] = [];
-  if (canCreate && !isShipper) {
-    const { data } = await supabase
-      .from('shippers')
-      .select('id, name')
-      .eq('org_id', active.orgId)
-      .order('name');
-    shippers = (data as ShipperRow[]) ?? [];
-  }
 
   return (
     <div>
@@ -62,7 +45,9 @@ export default async function RfqsPage() {
           <p className="text-muted mt-1">Requests for quote from shippers.</p>
         </div>
         {canCreate && (
-          <NewRfqModal orgId={active.orgId} shippers={shippers} hideShipperField={isShipper} />
+          <Link href="/portal/rfqs/new" className="btn-copper px-4 py-2 text-sm whitespace-nowrap">
+            + New RFQ
+          </Link>
         )}
       </div>
 
