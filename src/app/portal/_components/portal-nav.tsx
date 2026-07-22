@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Truck,
   FileText,
+  ScrollText,
   type LucideIcon,
 } from 'lucide-react';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
@@ -34,6 +35,7 @@ const NAV: { href: string; label: string; perm: NavPerm | NavPerm[] | null; icon
   { href: '/portal/carriers', label: 'Carrier Compliance', perm: PERMISSIONS.CARRIER_VIEW, icon: ShieldCheck },
   { href: '/portal/driver', label: 'Driver Brief', perm: PERMISSIONS.DRIVER_BRIEF_VIEW, icon: Truck },
   { href: '/portal/documents', label: 'Documents', perm: [PERMISSIONS.DOCUMENT_VIEW, PERMISSIONS.DOCUMENT_UPLOAD], icon: FileText },
+  { href: '/portal/audit', label: 'Audit Trail', perm: PERMISSIONS.AUDIT_VIEW, icon: ScrollText },
 ];
 
 /**
@@ -41,11 +43,11 @@ const NAV: { href: string; label: string; perm: NavPerm | NavPerm[] | null; icon
  *
  *   /portal/invoices  INVOICE_CREATE   — M6
  *   /portal/admin     ADMIN_CONFIG     — M7
- *   /portal/audit     AUDIT_VIEW       — Phase D
  *
- * All three were in this list with no page behind them, so every org_admin saw
- * three sidebar entries that 404'd. A nav entry is a promise the route exists;
- * `can()` returning true for the permission is not the same thing.
+ * Both were in this list with no page behind them, so every org_admin saw
+ * sidebar entries that 404'd. A nav entry is a promise the route exists;
+ * `can()` returning true for the permission is not the same thing. /portal/audit
+ * graduated out of this list once its page was built (see portal/audit).
  */
 
 export function PortalNav({ role }: { role: Role }) {
