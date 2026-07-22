@@ -42,6 +42,7 @@ export default async function QuotesPage() {
   }
 
   const canCreate = can(active.role, PERMISSIONS.QUOTE_CREATE);
+  const canCreateRfq = can(active.role, PERMISSIONS.RFQ_CREATE);
   const supabase = await getServerSupabase();
   const { data, error } = await supabase
     .from('quotes')
@@ -116,6 +117,14 @@ export default async function QuotesPage() {
                   <Link href="/portal/pricing" className="text-copper-400 hover:text-copper-300">
                     Margin Calculator
                   </Link>
+                  {canCreateRfq && (
+                    <>
+                      {' '}— or{' '}
+                      <Link href="/portal/rfqs" className="text-copper-400 hover:text-copper-300">
+                        start a new RFQ
+                      </Link>
+                    </>
+                  )}
                   .
                 </td>
               </tr>
