@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { requirePermission } from '@/lib/auth/guard';
 import { getServerSupabase, getServiceRoleSupabase } from '@/lib/supabase/server';
 import { PERMISSIONS } from '@/lib/rbac/permissions';
@@ -127,9 +128,38 @@ export async function createRfq(formData: FormData): Promise<ActionResult> {
     }
 
     const serviceRole = getServiceRoleSupabase();
-    const { error } = await serviceRole.from('rfqs').insert({
-      org_id: shipper.org_id,
-      shipper_id: shipper.id,
+    const { data: created, error } = await serviceRole
+      .from('rfqs')
+      .insert({
+        org_id: shipper.org_id,
+        shipper_id: shipper.id,
+        service_type: serviceType,
+        origin,
+        destination,
+        freight_details: freightDetails,
+        pickup_at: pickupAt,
+        status: 'open',
+        created_by: ctx.userId,
+        ...freightDetailFields,
+      })
+      .select('id')
+      .single();
+    if (error) throw error;
+
+    // Land on the new RFQ's detail page, same as createLoadFromQuote. redirect()
+    // throws NEXT_REDIRECT, so nothing after it runs and the ActionResult
+    // return is never reached on the success path.
+    revalidatePath('/portal/rfqs');
+    redirect(`/portal/rfqs/${created.id}`);
+  }
+
+  const shipperId = String(formData.get('shipperId') ?? '') || null;
+  const supabase = await getServerSupabase();
+  const { data: created, error } = await supabase
+    .from('rfqs')
+    .insert({
+      org_id: orgId,
+      shipper_id: shipperId,
       service_type: serviceType,
       origin,
       destination,
@@ -138,29 +168,11 @@ export async function createRfq(formData: FormData): Promise<ActionResult> {
       status: 'open',
       created_by: ctx.userId,
       ...freightDetailFields,
-    });
-    if (error) throw error;
-
-    revalidatePath('/portal/rfqs');
-    return { ok: true };
-  }
-
-  const shipperId = String(formData.get('shipperId') ?? '') || null;
-  const supabase = await getServerSupabase();
-  const { error } = await supabase.from('rfqs').insert({
-    org_id: orgId,
-    shipper_id: shipperId,
-    service_type: serviceType,
-    origin,
-    destination,
-    freight_details: freightDetails,
-    pickup_at: pickupAt,
-    status: 'open',
-    created_by: ctx.userId,
-    ...freightDetailFields,
-  });
+    })
+    .select('id')
+    .single();
   if (error) throw error;
 
   revalidatePath('/portal/rfqs');
-  return { ok: true };
+  redirect(`/portal/rfqs/${created.id}`);
 }
