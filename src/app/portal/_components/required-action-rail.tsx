@@ -45,14 +45,22 @@ function ctaRouteFor(action: WorkflowAction, rfqId?: string | null): string | nu
 export function RequiredActionRail({
   action,
   rfqId,
+  hideCta = false,
 }: {
   action: RequiredAction;
   /** Context for the CTA deep-link (only the RFQ needs it today). */
   rfqId?: string | null;
+  /**
+   * Suppress the CTA entirely, keeping only the stage / next / owner / blockers
+   * narrative. Used on the load detail page, where the existing "Advance
+   * status" form is the real control and a rail button would just duplicate it
+   * — the rail's value there is explaining *why* an advance is or isn't allowed.
+   */
+  hideCta?: boolean;
 }) {
   const cta = action.cta;
   const href = cta ? ctaRouteFor(cta.action, rfqId) : null;
-  const showLink = Boolean(cta && cta.enabled && href);
+  const showLink = Boolean(!hideCta && cta && cta.enabled && href);
 
   return (
     <aside className="panel p-5 lg:sticky lg:top-6">
@@ -72,7 +80,7 @@ export function RequiredActionRail({
           <ArrowRight size={14} strokeWidth={2} />
         </Link>
       )}
-      {cta && !cta.enabled && (
+      {!hideCta && cta && !cta.enabled && (
         <div className="mt-4">
           <span className="inline-block cursor-not-allowed rounded-lg border border-line px-3 py-1.5 text-sm text-muted opacity-60">
             {cta.label}
