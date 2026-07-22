@@ -13,6 +13,8 @@ import {
 } from '@/lib/loads/lifecycle';
 import { readSnapshotCents } from '@/lib/pricing/snapshot';
 import { getCarrierComplianceResult } from '@/lib/compliance/policy.server';
+import { type ComplianceResult } from '@/lib/compliance/gate';
+import { resolveLoadRequiredAction } from '@/lib/workflow/required-action';
 import {
   ACCESSORIAL_TYPE,
   ACCESSORIAL_TYPE_LABELS,
@@ -23,8 +25,25 @@ import { Breadcrumb } from '../../_components/breadcrumb';
 import { ActionForm } from '../../_components/action-form';
 import { SubmitButton } from '../../_components/submit-button';
 import { LifecycleTimeline } from '../../_components/lifecycle-timeline';
+import { RequiredActionRail } from '../../_components/required-action-rail';
 import { StatusBadge, STATUS_FACET } from '../../_components/status-badge';
 import { advanceLoadStatus, addAccessorial } from '../actions';
+
+// The rail is shown only for the window where the §9 load resolver maps
+// faithfully to a real Phase-1 next step. Draft/quoted are excluded — the
+// resolver's next step there is "assign carrier", but this app books a load
+// (with a carrier already attached) straight into 'quoted' and advances it to
+// 'booked' via the on-page form, so the resolver would mislead. Delivered
+// onward is M6 (invoicing/settlement) with no route yet.
+const RAIL_STATUSES = new Set<LoadStatus>([
+  LOAD_STATUS.BOOKED,
+  LOAD_STATUS.AWAITING_CARRIER_SIGNATURE,
+  LOAD_STATUS.SIGNED_AWAITING_BROKER_RELEASE,
+  LOAD_STATUS.RELEASED_TO_DRIVER,
+  LOAD_STATUS.DRIVER_ACKNOWLEDGED,
+  LOAD_STATUS.DISPATCHED,
+  LOAD_STATUS.IN_TRANSIT,
+]);
 
 // These two steps only happen through the rate-confirmation flow
 // (sendRatecon/signRatecon) — offering them in the generic advance dropdown
@@ -43,6 +62,7 @@ interface LoadDetail {
   commercial_snapshot: Record<string, unknown> | null;
   carrier_id: string | null;
   carrier_name: string | null;
+  driver_id: string | null;
   rfq_id: string | null;
   created_at: string;
 }
@@ -85,7 +105,7 @@ export default async function LoadDetailPage({ params }: { params: Promise<{ id:
   const { data: loadData, error } = await supabase
     .from('loads')
     .select(
-      'id, reference, origin, destination, status, commercial_snapshot, carrier_id, carrier_name, rfq_id, created_at',
+      'id, reference, origin, destination, status, commercial_snapshot, carrier_id, carrier_name, driver_id, rfq_id, created_at',
     )
     .eq('id', id)
     .maybeSingle();
@@ -99,6 +119,9 @@ export default async function LoadDetailPage({ params }: { params: Promise<{ id:
   let accessorials: AccessorialRow[] = [];
   let sourceQuote: SourceQuoteRow | null = null;
   let carrierAllowed: boolean | null = null;
+  let compliance: ComplianceResult | null = null;
+  let carrierStatus: string | null = null;
+  let rateconSigned = false;
   if (showCommercials) {
     const { data: accessorialData } = await supabase
       .from('accessorials')
@@ -117,9 +140,26 @@ export default async function LoadDetailPage({ params }: { params: Promise<{ id:
     sourceQuote = (quoteData as SourceQuoteRow | null) ?? null;
 
     if (load.carrier_id) {
-      const result = await getCarrierComplianceResult(active.orgId, load.carrier_id);
-      carrierAllowed = result?.allowed ?? false;
+      compliance = (await getCarrierComplianceResult(active.orgId, load.carrier_id)) ?? null;
+      carrierAllowed = compliance?.allowed ?? false;
+      const { data: carrierRow } = await supabase
+        .from('carriers')
+        .select('status')
+        .eq('id', load.carrier_id)
+        .maybeSingle();
+      carrierStatus = (carrierRow as { status: string } | null)?.status ?? null;
     }
+
+    // Same signed-rate-con check advanceLoadStatus gates release on — so the
+    // rail's RATECON_NOT_SIGNED blocker and the server enforcement agree.
+    const { data: signedRc } = await supabase
+      .from('rate_confirmations')
+      .select('id')
+      .eq('load_id', id)
+      .eq('status', 'signed')
+      .limit(1)
+      .maybeSingle();
+    rateconSigned = Boolean(signedRc);
   }
 
   const margin = showCommercials
@@ -135,6 +175,47 @@ export default async function LoadDetailPage({ params }: { params: Promise<{ id:
   // load's own — a load booked from a quote has both; a directly-created one
   // may only have the latter.
   const rfqId = sourceQuote?.rfq_id ?? load.rfq_id;
+
+  // §9 required-action rail. Shown to internal roles only (same gate as the
+  // carrier-compliance data it depends on) and only across the status window
+  // where the resolver maps faithfully (RAIL_STATUSES).
+  const requiredAction =
+    showCommercials && RAIL_STATUSES.has(load.status)
+      ? resolveLoadRequiredAction({
+          status: load.status,
+          carrier: load.carrier_id
+            ? {
+                name: load.carrier_name ?? 'Assigned carrier',
+                suspended: carrierStatus === 'suspended',
+                compliance: compliance
+                  ? { allowed: compliance.allowed, blockingReasons: compliance.blockingReasons }
+                  : null,
+                // Coverage adequacy is already reflected in `compliance`; the
+                // standalone expiry-date warning isn't separately surfaced here.
+                insuranceExpiry: null,
+              }
+            : null,
+          driverAssigned: load.driver_id !== null,
+          rateconSigned,
+          hasPickupAddress: load.origin.trim() !== '',
+          hasDeliveryAddress: load.destination.trim() !== '',
+          // Facts the Phase-1 schema doesn't model yet are passed satisfied so
+          // the rail matches what advanceLoadStatus actually enforces (legal
+          // transition + signed rate-con + carrier compliance at release).
+          // Gating on structured stops, appointments, POD and billing is future
+          // work as those fields land (M6).
+          deliveryAppointmentRequired: false,
+          deliveryAppointmentAt: null,
+          receiverName: 'n/a',
+          hasPod: true,
+          podVerified: true,
+          hasCarrierInvoice: true,
+          customerBillingEmail: 'n/a',
+          customerPaymentTerms: 'n/a',
+          openExceptionCount: 0,
+          asOf: new Date(),
+        })
+      : null;
 
   return (
     <div>
@@ -152,15 +233,17 @@ export default async function LoadDetailPage({ params }: { params: Promise<{ id:
         <StatusBadge facet={STATUS_FACET.LOAD} value={load.status} className="whitespace-nowrap" />
       </div>
 
-      <div className="panel mt-6 p-6 overflow-x-auto">
-        <LifecycleTimeline
-          sequence={LOAD_STATUS_SEQUENCE}
-          labels={LOAD_STATUS_LABELS}
-          current={load.status}
-        />
-      </div>
+      <div className={`mt-6 grid gap-6 ${requiredAction ? 'lg:grid-cols-[1fr_320px]' : ''}`}>
+        <div className="min-w-0 space-y-6">
+          <div className="panel p-6 overflow-x-auto">
+            <LifecycleTimeline
+              sequence={LOAD_STATUS_SEQUENCE}
+              labels={LOAD_STATUS_LABELS}
+              current={load.status}
+            />
+          </div>
 
-      <div className="grid lg:grid-cols-2 gap-6 mt-6">
+          <div className="grid lg:grid-cols-2 gap-6">
         <div className="panel p-6">
           <h2 className="font-semibold">Load details</h2>
           <dl className="mt-4 space-y-3 text-sm">
@@ -334,6 +417,9 @@ export default async function LoadDetailPage({ params }: { params: Promise<{ id:
             )}
           </div>
         )}
+          </div>
+        </div>
+        {requiredAction && <RequiredActionRail action={requiredAction} hideCta />}
       </div>
     </div>
   );
