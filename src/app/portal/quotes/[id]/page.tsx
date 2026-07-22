@@ -52,6 +52,8 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
     return <NotAuthorized />;
   }
 
+  const canBook = can(active.role, PERMISSIONS.LOAD_CREATE);
+
   const supabase = await getServerSupabase();
   const { data: quote, error } = await supabase
     .from('quotes')
@@ -109,7 +111,17 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
             {new Date(detail.created_at).toLocaleString()}
           </p>
         </div>
-        <StatusBadge facet={STATUS_FACET.QUOTE} value={detail.status} className="whitespace-nowrap" />
+        <div className="flex flex-col items-end gap-3">
+          <StatusBadge facet={STATUS_FACET.QUOTE} value={detail.status} className="whitespace-nowrap" />
+          {canBook && detail.status === 'approved' && !detail.load_id && (
+            <Link
+              href={`/portal/loads/new?quoteId=${detail.id}`}
+              className="btn-copper px-4 py-2 whitespace-nowrap"
+            >
+              Book this load
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6 mt-6">
@@ -175,7 +187,10 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
               <dd className="text-right">
                 {load ? (
                   <>
-                    <Link href="/portal/loads" className="text-copper-400 hover:text-copper-300">
+                    <Link
+                      href={`/portal/loads/${load.id}`}
+                      className="text-copper-400 hover:text-copper-300"
+                    >
                       {load.reference}
                     </Link>{' '}
                     · {load.carrier_name ?? 'No carrier'} · {load.status}
