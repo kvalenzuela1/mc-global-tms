@@ -148,6 +148,7 @@ export async function createQuote(formData: FormData): Promise<ActionResult> {
   );
 
   revalidatePath('/portal/pricing');
+  revalidatePath('/portal/approvals'); // the new pending override shows up here
   return { ok: true };
 }
 
@@ -211,7 +212,7 @@ export async function approveOverride(formData: FormData): Promise<ActionResult>
     entityId: quoteId,
   });
 
-  revalidatePath('/portal/pricing');
+  revalidatePath('/portal/approvals');
   return { ok: true };
 }
 
@@ -238,6 +239,6 @@ export async function rejectOverride(formData: FormData): Promise<ActionResult> 
     metadata: { decision: 'rejected' },
   });
 
-  revalidatePath('/portal/pricing');
+  revalidatePath('/portal/approvals');
   return { ok: true };
 }
