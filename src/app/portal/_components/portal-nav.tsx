@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   FilePlus2,
+  FileSpreadsheet,
   Percent,
   Package,
   FileCheck2,
@@ -28,7 +29,8 @@ type NavPerm = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
 const NAV: { href: string; label: string; perm: NavPerm | NavPerm[] | null; icon: LucideIcon }[] = [
   { href: '/portal', label: 'Overview', perm: null, icon: LayoutDashboard },
-  { href: '/portal/rfqs', label: 'RFQs & Quotes', perm: [PERMISSIONS.RFQ_VIEW, PERMISSIONS.RFQ_CREATE], icon: FilePlus2 },
+  { href: '/portal/rfqs', label: 'RFQs', perm: [PERMISSIONS.RFQ_VIEW, PERMISSIONS.RFQ_CREATE], icon: FilePlus2 },
+  { href: '/portal/quotes', label: 'Quotes', perm: PERMISSIONS.PRICING_VIEW, icon: FileSpreadsheet },
   { href: '/portal/pricing', label: 'Margin Calculator', perm: PERMISSIONS.PRICING_VIEW, icon: Percent },
   { href: '/portal/loads', label: 'Loads', perm: [PERMISSIONS.LOAD_VIEW, PERMISSIONS.SHIPPER_TRACK], icon: Package },
   { href: '/portal/ratecons', label: 'Rate Confirmations', perm: PERMISSIONS.RATECON_VIEW, icon: FileCheck2 },
