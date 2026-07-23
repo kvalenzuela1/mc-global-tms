@@ -16,6 +16,7 @@ import { getServiceRoleSupabase } from '@/lib/supabase/server';
 export const AUDIT_ACTIONS = {
   LOAD_TRANSITION: 'load.transition',
   RFQ_STATUS_CHANGED: 'rfq.status_changed',
+  RFQ_UPDATED: 'rfq.updated',
   COMPLIANCE_CHECK: 'compliance.check',
   COMPLIANCE_OVERRIDE: 'compliance.override',
   PRICING_OVERRIDE: 'pricing.override',
