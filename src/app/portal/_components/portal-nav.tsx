@@ -15,6 +15,7 @@ import {
   ScrollText,
   BadgeCheck,
   Building2,
+  Receipt,
   type LucideIcon,
 } from 'lucide-react';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
@@ -40,6 +41,7 @@ const NAV: { href: string; label: string; perm: NavPerm | NavPerm[] | null; icon
   { href: '/portal/carriers', label: 'Carrier Compliance', perm: PERMISSIONS.CARRIER_VIEW, icon: ShieldCheck },
   { href: '/portal/driver', label: 'Driver Brief', perm: PERMISSIONS.DRIVER_BRIEF_VIEW, icon: Truck },
   { href: '/portal/documents', label: 'Documents', perm: [PERMISSIONS.DOCUMENT_VIEW, PERMISSIONS.DOCUMENT_UPLOAD], icon: FileText },
+  { href: '/portal/finance', label: 'Invoicing', perm: PERMISSIONS.INVOICE_CREATE, icon: Receipt },
   { href: '/portal/approvals', label: 'Approvals', perm: [PERMISSIONS.PRICING_OVERRIDE_APPROVE, PERMISSIONS.COMPLIANCE_OVERRIDE], icon: BadgeCheck },
   { href: '/portal/audit', label: 'Audit Trail', perm: PERMISSIONS.AUDIT_VIEW, icon: ScrollText },
 ];
