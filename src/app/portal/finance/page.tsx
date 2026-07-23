@@ -60,11 +60,12 @@ export default async function FinancePage() {
   const podLoads = new Set<string>();
   const signedRcLoads = new Set<string>();
   if (loadIds.length > 0) {
-    const { data: docData } = await supabase
+    const { data: docData, error: docError } = await supabase
       .from('documents')
       .select('load_id, doc_type')
       .in('load_id', loadIds)
       .in('doc_type', ['bol', 'pod']);
+    if (docError) throw docError;
     for (const d of (docData as { load_id: string; doc_type: string }[]) ?? []) {
       if (d.doc_type === 'bol') bolLoads.add(d.load_id);
       if (d.doc_type === 'pod') podLoads.add(d.load_id);
@@ -72,11 +73,12 @@ export default async function FinancePage() {
 
     // A signed rate confirmation is the ratecon row for the load at status
     // 'signed' — same signal the ratecons page and the release gate use.
-    const { data: rcData } = await supabase
+    const { data: rcData, error: rcError } = await supabase
       .from('ratecons')
       .select('load_id, status')
       .in('load_id', loadIds)
       .eq('status', 'signed');
+    if (rcError) throw rcError;
     for (const rc of (rcData as { load_id: string }[]) ?? []) {
       signedRcLoads.add(rc.load_id);
     }
