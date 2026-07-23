@@ -49,6 +49,7 @@ export const STATUS_FACET = {
   RATECON: 'ratecon',
   CARRIER: 'carrier',
   COMPLIANCE: 'compliance',
+  CUSTOMER: 'customer',
 } as const;
 
 export type StatusFacet = (typeof STATUS_FACET)[keyof typeof STATUS_FACET];
@@ -126,6 +127,14 @@ const COMPLIANCE_TONES: Record<string, ToneEntry> = {
   unreviewed: { tone: STATUS_TONE.MUTED, label: 'Not yet reviewed' },
 };
 
+/** `shippers.status` — the customer-relationship state (see 0012_customers.sql). */
+const CUSTOMER_TONES: Record<string, ToneEntry> = {
+  prospect: { tone: STATUS_TONE.MUTED, label: 'Prospect' },
+  active: { tone: STATUS_TONE.OK, label: 'Active' },
+  on_hold: { tone: STATUS_TONE.WARN, label: 'On hold' },
+  inactive: { tone: STATUS_TONE.MUTED, label: 'Inactive' },
+};
+
 /** Fallback for a status string this module does not know about. */
 const UNKNOWN: StatusTone = STATUS_TONE.MUTED;
 
@@ -148,6 +157,8 @@ export function toneFor(facet: StatusFacet, value: string): StatusTone {
       return CARRIER_TONES[value]?.tone ?? UNKNOWN;
     case STATUS_FACET.COMPLIANCE:
       return COMPLIANCE_TONES[value]?.tone ?? UNKNOWN;
+    case STATUS_FACET.CUSTOMER:
+      return CUSTOMER_TONES[value]?.tone ?? UNKNOWN;
     default:
       return UNKNOWN;
   }
@@ -172,6 +183,8 @@ export function labelFor(facet: StatusFacet, value: string): string {
       return CARRIER_TONES[value]?.label ?? humanise(value);
     case STATUS_FACET.COMPLIANCE:
       return COMPLIANCE_TONES[value]?.label ?? humanise(value);
+    case STATUS_FACET.CUSTOMER:
+      return CUSTOMER_TONES[value]?.label ?? humanise(value);
     default:
       return humanise(value);
   }

@@ -199,6 +199,39 @@ async function main() {
     driverAudit.rows.length === 0 ? 'no rows' : `LEAK — ${driverAudit.rows.length} row(s)`,
   );
 
+  // --- Customers (0012): broker-org only ---------------------------------
+  console.log('\n  Customers module (0012)');
+
+  const brokerContacts = await queryAs(broker, 'customer_contacts?select=id');
+  check(
+    'CUS-01: broker can read customer_contacts',
+    brokerContacts.rows.length > 0,
+    brokerContacts.rows.length === 0
+      ? `got 0 rows (HTTP ${brokerContacts.status}) — is the seed applied?`
+      : `${brokerContacts.rows.length} contact(s)`,
+  );
+  const brokerLocations = await queryAs(broker, 'customer_locations?select=id');
+  check(
+    'CUS-01: broker can read customer_locations',
+    brokerLocations.rows.length > 0,
+    brokerLocations.rows.length === 0
+      ? `got 0 rows (HTTP ${brokerLocations.status}) — is the seed applied?`
+      : `${brokerLocations.rows.length} location(s)`,
+  );
+
+  const driverContacts = await queryAs(driver, 'customer_contacts?select=id');
+  check(
+    'CUS-01: driver reads ZERO customer_contacts (RLS)',
+    driverContacts.rows.length === 0,
+    driverContacts.rows.length === 0 ? 'no rows' : `LEAK — ${driverContacts.rows.length} row(s)`,
+  );
+  const carrierLocations = await queryAs(carrier, 'customer_locations?select=id');
+  check(
+    'CUS-01: carrier reads ZERO customer_locations (RLS)',
+    carrierLocations.rows.length === 0,
+    carrierLocations.rows.length === 0 ? 'no rows' : `LEAK — ${carrierLocations.rows.length} row(s)`,
+  );
+
   /* ------------------------------------------------------------ summary --- */
 
   const failed = results.filter((r) => !r.passed);
