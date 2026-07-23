@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/auth/guard';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { PERMISSIONS } from '@/lib/rbac/permissions';
 import { AUDIT_ACTIONS, writeAudit } from '@/lib/audit/log';
+import { CUSTOMER_STATUSES, CONTACT_ROLES } from '@/lib/customers/constants';
 import type { ActionResult } from '@/lib/actions/result';
 
 /**
@@ -14,8 +15,8 @@ import type { ActionResult } from '@/lib/actions/result';
  * members; the permission check is the app-layer half of that defense in depth.
  */
 
-const CUSTOMER_STATUSES = ['prospect', 'active', 'on_hold', 'inactive'] as const;
-const CONTACT_ROLES = ['primary', 'billing', 'operations', 'receiving'] as const;
+/** Pragmatic server-side email shape check — client `type="email"` is bypassable. */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Parse a positive dollar amount to integer cents, or null when blank. */
 function dollarsToCents(raw: string): number | null {
@@ -71,12 +72,16 @@ export async function updateCustomer(formData: FormData): Promise<ActionResult> 
   if (!Number.isInteger(paymentTermsDays) || paymentTermsDays < 0) {
     return { ok: false, error: 'Payment terms must be a whole number of days.' };
   }
+  const billingEmail = String(formData.get('billingEmail') ?? '').trim() || null;
+  if (billingEmail && !EMAIL_RE.test(billingEmail)) {
+    return { ok: false, error: 'Enter a valid billing email.' };
+  }
 
   const patch = {
     name,
     status,
     code: String(formData.get('code') ?? '').trim() || null,
-    billing_email: String(formData.get('billingEmail') ?? '').trim() || null,
+    billing_email: billingEmail,
     payment_terms_days: paymentTermsDays,
     credit_limit_cents: dollarsToCents(String(formData.get('creditLimitDollars') ?? '')),
     tax_id: String(formData.get('taxId') ?? '').trim() || null,
@@ -117,6 +122,10 @@ export async function addContact(formData: FormData): Promise<ActionResult> {
   if (role !== '' && !CONTACT_ROLES.includes(role as (typeof CONTACT_ROLES)[number])) {
     return { ok: false, error: 'Invalid contact role.' };
   }
+  const email = String(formData.get('email') ?? '').trim() || null;
+  if (email && !EMAIL_RE.test(email)) {
+    return { ok: false, error: 'Enter a valid contact email.' };
+  }
 
   const supabase = await getServerSupabase();
   const { data, error } = await supabase
@@ -126,7 +135,7 @@ export async function addContact(formData: FormData): Promise<ActionResult> {
       shipper_id: shipperId,
       name,
       title: String(formData.get('title') ?? '').trim() || null,
-      email: String(formData.get('email') ?? '').trim() || null,
+      email,
       phone: String(formData.get('phone') ?? '').trim() || null,
       role: role || null,
       is_primary: formData.get('isPrimary') === 'on',
@@ -155,7 +164,7 @@ export async function addLocation(formData: FormData): Promise<ActionResult> {
 
   const { ctx } = await requirePermission(orgId, PERMISSIONS.CUSTOMER_MANAGE);
   if (!shipperId) return { ok: false, error: 'Missing customer.' };
-  if (!label) return { ok: false, error: 'A location label is required.' };
+  if (!label) return { ok: false, error: "Location label is required (e.g. 'Dallas DC')." };
 
   const supabase = await getServerSupabase();
   const { data, error } = await supabase

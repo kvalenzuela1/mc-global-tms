@@ -6,6 +6,8 @@ import { Breadcrumb } from '../../_components/breadcrumb';
 import { ActionForm } from '../../_components/action-form';
 import { SubmitButton } from '../../_components/submit-button';
 import { StatusBadge, STATUS_FACET } from '../../_components/status-badge';
+import { NotAuthorized } from '../../_components/not-authorized';
+import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABELS, CONTACT_ROLES } from '@/lib/customers/constants';
 import { updateCustomer, addContact, addLocation } from '../actions';
 
 interface CustomerDetail {
@@ -43,14 +45,10 @@ interface LocationRow {
   appointment_required: boolean;
 }
 
-const STATUS_OPTIONS: { value: string; label: string }[] = [
-  { value: 'prospect', label: 'Prospect' },
-  { value: 'active', label: 'Active' },
-  { value: 'on_hold', label: 'On hold' },
-  { value: 'inactive', label: 'Inactive' },
-];
-
-const CONTACT_ROLE_OPTIONS = ['primary', 'billing', 'operations', 'receiving'];
+const STATUS_OPTIONS = CUSTOMER_STATUSES.map((value) => ({
+  value,
+  label: CUSTOMER_STATUS_LABELS[value],
+}));
 
 export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -60,7 +58,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   if (!active) return null;
 
   if (!can(active.role, PERMISSIONS.CUSTOMER_VIEW)) {
-    return <NotAuthorized />;
+    return <NotAuthorized resource="customers" />;
   }
   const canManage = can(active.role, PERMISSIONS.CUSTOMER_MANAGE);
 
@@ -210,7 +208,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                 <input name="phone" placeholder="Phone" className="input" />
                 <select name="role" className="input" defaultValue="">
                   <option value="">Role (optional)</option>
-                  {CONTACT_ROLE_OPTIONS.map((r) => (
+                  {CONTACT_ROLES.map((r) => (
                     <option key={r} value={r}>
                       {r.charAt(0).toUpperCase() + r.slice(1)}
                     </option>
@@ -269,6 +267,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
               <input name="city" placeholder="City" className="input" />
               <input name="state" placeholder="State" className="input" />
               <input name="postalCode" placeholder="Postal code" className="input" />
+              <input name="country" defaultValue="US" placeholder="Country" className="input" />
               <input name="hours" placeholder="Hours (e.g. 8–5 M–F)" className="input" />
               <input name="contactName" placeholder="Site contact" className="input" />
               <input name="contactPhone" placeholder="Site phone" className="input" />
@@ -295,11 +294,3 @@ function Row({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-function NotAuthorized() {
-  return (
-    <div className="panel p-8 max-w-lg">
-      <h1 className="text-xl font-bold">Not authorized</h1>
-      <p className="mt-2 text-muted text-sm">Your role does not include access to customers.</p>
-    </div>
-  );
-}

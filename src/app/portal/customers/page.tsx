@@ -5,6 +5,7 @@ import { getServerSupabase } from '@/lib/supabase/server';
 import { ActionForm } from '../_components/action-form';
 import { SubmitButton } from '../_components/submit-button';
 import { StatusBadge, STATUS_FACET } from '../_components/status-badge';
+import { NotAuthorized } from '../_components/not-authorized';
 import { createCustomer } from './actions';
 
 /**
@@ -28,7 +29,7 @@ export default async function CustomersPage() {
   if (!active) return null;
 
   if (!can(active.role, PERMISSIONS.CUSTOMER_VIEW)) {
-    return <NotAuthorized />;
+    return <NotAuthorized resource="customers" />;
   }
 
   const canManage = can(active.role, PERMISSIONS.CUSTOMER_MANAGE);
@@ -106,11 +107,3 @@ export default async function CustomersPage() {
   );
 }
 
-function NotAuthorized() {
-  return (
-    <div className="panel p-8 max-w-lg">
-      <h1 className="text-xl font-bold">Not authorized</h1>
-      <p className="mt-2 text-muted text-sm">Your role does not include access to customers.</p>
-    </div>
-  );
-}
