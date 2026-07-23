@@ -5,11 +5,15 @@ import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { RFQ_STATUS, RFQ_STATUS_SEQUENCE, RFQ_STATUS_LABELS, type RfqStatus } from '@/lib/rfqs/lifecycle';
 import { PACKAGING_TYPE_LABELS, type PackagingType } from '@/lib/rfqs/freight-detail';
+import { equipmentLabel, equipmentTypesByCategory } from '@/lib/rfqs/equipment';
 import { resolveRfqRequiredAction } from '@/lib/workflow/required-action';
 import { Breadcrumb } from '../../_components/breadcrumb';
+import { ActionForm } from '../../_components/action-form';
+import { SubmitButton } from '../../_components/submit-button';
 import { LifecycleTimeline } from '../../_components/lifecycle-timeline';
 import { RequiredActionRail } from '../../_components/required-action-rail';
 import { StatusBadge, STATUS_FACET } from '../../_components/status-badge';
+import { setRfqFreight } from './actions';
 
 interface RfqDetail {
   id: string;
@@ -32,6 +36,8 @@ interface RfqDetail {
   dimension_unit: string;
   nmfc_code: string | null;
   freight_class: number | null;
+  equipment_type: string | null;
+  commodity: string | null;
 }
 
 interface QuoteRow {
@@ -82,6 +88,7 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
   if (!can(active.role, PERMISSIONS.RFQ_VIEW)) {
     return <NotAuthorized />;
   }
+  const canManage = can(active.role, PERMISSIONS.RFQ_CREATE);
 
   const supabase = await getServerSupabase();
   const { data: rfq, error } = await supabase
@@ -89,7 +96,8 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
     .select(
       'id, origin, destination, service_type, status, freight_details, pickup_at, created_at, shippers(name), ' +
         'packaging_type, piece_count, package_count, gross_weight_value, gross_weight_unit, ' +
-        'length_value, width_value, height_value, dimension_unit, nmfc_code, freight_class',
+        'length_value, width_value, height_value, dimension_unit, nmfc_code, freight_class, ' +
+        'equipment_type, commodity',
     )
     .eq('id', id)
     .eq('org_id', active.orgId)
@@ -203,6 +211,14 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
               <dd className="text-right">{detail.freight_class != null ? `Class ${detail.freight_class}` : '—'}</dd>
             </div>
             <div className="flex justify-between gap-4">
+              <dt className="text-muted">Equipment</dt>
+              <dd className="text-right">{detail.equipment_type ? equipmentLabel(detail.equipment_type) : '—'}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted">Commodity</dt>
+              <dd className="text-right">{detail.commodity ?? '—'}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
               <dt className="text-muted">Pickup date/time</dt>
               <dd className="text-right">
                 {detail.pickup_at ? new Date(detail.pickup_at).toLocaleString() : '—'}
@@ -213,6 +229,41 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
               <dd className="text-right">{new Date(detail.created_at).toLocaleString()}</dd>
             </div>
           </dl>
+
+          {canManage && (
+            <ActionForm action={setRfqFreight} className="mt-6 border-t border-line pt-4 space-y-3">
+              <input type="hidden" name="orgId" value={active.orgId} />
+              <input type="hidden" name="rfqId" value={detail.id} />
+              <h3 className="text-sm font-semibold">Equipment & commodity</h3>
+              <div>
+                <label className="block text-sm mb-1">Equipment type</label>
+                <select name="equipmentType" className="input" defaultValue={detail.equipment_type ?? ''}>
+                  <option value="">— None —</option>
+                  {equipmentTypesByCategory().map((group) => (
+                    <optgroup key={group.category} label={group.label}>
+                      {group.types.map((t) => (
+                        <option key={t.value} value={t.value}>
+                          {t.def.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm mb-1">Commodity</label>
+                <input
+                  name="commodity"
+                  defaultValue={detail.commodity ?? ''}
+                  placeholder="e.g. Frozen poultry, steel coils"
+                  className="input"
+                />
+              </div>
+              <SubmitButton className="btn-copper px-4 py-2" pendingLabel="Saving…">
+                Save
+              </SubmitButton>
+            </ActionForm>
+          )}
         </div>
 
         <div className="panel p-6">
