@@ -8,14 +8,8 @@ import { PERMISSIONS } from '@/lib/rbac/permissions';
 import { ROLES } from '@/lib/rbac/roles';
 import { AUDIT_ACTIONS, writeAudit } from '@/lib/audit/log';
 import { hashBytes } from '@/lib/documents/hash';
+import { isUploadableDocType } from '@/lib/documents/types';
 import type { ActionResult } from '@/lib/actions/result';
-
-// Load-scoped only for now — 'coi' and 'ratecon_pdf' are left out: COI is
-// carrier-scoped and documents_select/write RLS has no carrier_id carve-out
-// (only org member or load access), and ratecon_pdf is meant to be
-// system-generated once M5's real PDF generation exists, not manually
-// uploaded. See supabase/migrations/0008_documents_storage.sql.
-const DOC_TYPES = new Set(['bol', 'pod', 'receipt', 'other']);
 
 // Real ceiling, not arbitrary: matches the bucket's own file_size_limit
 // (0008_documents_storage.sql) and stays under Vercel's ~4.5MB serverless
@@ -77,7 +71,7 @@ export async function uploadDocument(formData: FormData): Promise<ActionResult> 
 
   const { ctx, membership } = await requirePermission(orgId, PERMISSIONS.DOCUMENT_UPLOAD);
 
-  if (!DOC_TYPES.has(docType)) {
+  if (!isUploadableDocType(docType)) {
     return { ok: false, error: 'Invalid document type.' };
   }
   if (!(file instanceof File) || file.size === 0) {
