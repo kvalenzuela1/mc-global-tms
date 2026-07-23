@@ -34,8 +34,12 @@ Keep it **private**. The repo contains client delivery documents, and
 
 Vercel dashboard → Add New → Project → import the repo. It detects Next.js and
 reads `vercel.json`. Vercel's own Git integration handles deploys — push a
-branch and you get a preview URL, merge to `main` and it goes to production. No
-deploy workflow file is needed, and adding one would double-build.
+branch and you get a preview URL, merge to `master` and it goes to production.
+No deploy workflow file is needed, and adding one would double-build.
+
+The repo's default branch is `master` — set Vercel's Production Branch to
+`master` (Project → Settings → Git). It defaults to the repo default, so this
+is usually already correct, but confirm it rather than assume `main`.
 
 ## 3. Environment variables
 
@@ -80,7 +84,7 @@ Without the second entry, previews build fine but nobody can log in to them.
 `.github/workflows/ci.yml` runs the offline tests, typecheck, build, and a
 migration-apply check. Make it binding:
 
-GitHub → Settings → Branches → Add rule for `main` → Require status checks to
+GitHub → Settings → Branches → Add rule for `master` → Require status checks to
 pass → select **Domain logic (offline)**, **Typecheck and build**, and
 **Migrations apply cleanly**.
 
