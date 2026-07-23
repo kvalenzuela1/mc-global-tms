@@ -25,6 +25,8 @@ export const AUDIT_ACTIONS = {
   RATECON_SIGNED: 'ratecon.signed',
   DRIVER_ACK: 'driver.acknowledged',
   DOCUMENT_UPLOADED: 'document.uploaded',
+  DOCUMENT_VERIFIED: 'document.verified',
+  DOCUMENT_REJECTED: 'document.rejected',
   ACCESSORIAL_ADDED: 'accessorial.added',
   CUSTOMER_CREATED: 'customer.created',
   CUSTOMER_UPDATED: 'customer.updated',

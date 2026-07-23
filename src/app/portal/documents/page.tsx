@@ -1,10 +1,12 @@
+import Link from 'next/link';
 import { getSessionContext } from '@/lib/tenant/context';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { ROLES } from '@/lib/rbac/roles';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { ActionForm } from '../_components/action-form';
 import { SubmitButton } from '../_components/submit-button';
-import { uploadDocument } from './actions';
+import { StatusBadge, STATUS_FACET } from '../_components/status-badge';
+import { uploadDocument, verifyDocument, rejectDocument } from './actions';
 
 interface LoadOption {
   id: string;
@@ -19,14 +21,21 @@ interface DocumentRow {
   doc_type: string;
   storage_path: string | null;
   created_at: string;
+  status: string;
+  expires_at: string | null;
+  rejection_reason: string | null;
 }
 
 interface DocumentDisplayRow {
   id: string;
+  loadId: string | null;
   loadReference: string;
   docType: string;
   createdAt: string;
   downloadUrl: string | null;
+  status: string;
+  expiresAt: string | null;
+  rejectionReason: string | null;
 }
 
 const DOC_TYPE_LABELS: Record<string, string> = {
@@ -46,6 +55,7 @@ export default async function DocumentsPage() {
 
   const canUpload = can(active.role, PERMISSIONS.DOCUMENT_UPLOAD);
   const canView = can(active.role, PERMISSIONS.DOCUMENT_VIEW);
+  const canVerify = can(active.role, PERMISSIONS.DOCUMENT_VERIFY);
   if (!canUpload && !canView) {
     return <NotAuthorized />;
   }
@@ -84,7 +94,7 @@ export default async function DocumentsPage() {
   if (canView) {
     const { data: docs, error } = await supabase
       .from('documents')
-      .select('id, load_id, doc_type, storage_path, created_at')
+      .select('id, load_id, doc_type, storage_path, created_at, status, expires_at, rejection_reason')
       .order('created_at', { ascending: false });
     if (error) throw error;
     const rows = (docs as DocumentRow[]) ?? [];
@@ -109,10 +119,14 @@ export default async function DocumentsPage() {
         }
         return {
           id: d.id,
+          loadId: d.load_id,
           loadReference: d.load_id ? (loadRefById.get(d.load_id) ?? '—') : '—',
           docType: d.doc_type,
           createdAt: d.created_at,
           downloadUrl,
+          status: d.status,
+          expiresAt: d.expires_at,
+          rejectionReason: d.rejection_reason,
         };
       }),
     );
@@ -165,30 +179,77 @@ export default async function DocumentsPage() {
               <tr className="border-b border-line">
                 <th className="pb-2">Load</th>
                 <th className="pb-2">Type</th>
+                <th className="pb-2">Status</th>
                 <th className="pb-2">Uploaded</th>
                 <th className="pb-2"></th>
               </tr>
             </thead>
             <tbody>
-              {documentRows.map((d) => (
-                <tr key={d.id} className="table-row border-t border-line">
-                  <td className="py-2">{d.loadReference}</td>
-                  <td className="py-2">{DOC_TYPE_LABELS[d.docType] ?? d.docType}</td>
-                  <td className="py-2">{new Date(d.createdAt).toLocaleString()}</td>
-                  <td className="py-2">
-                    {d.downloadUrl ? (
-                      <a href={d.downloadUrl} className="text-copper-500 text-xs" target="_blank" rel="noreferrer">
-                        Download
-                      </a>
-                    ) : (
-                      <span className="text-muted text-xs">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {documentRows.map((d) => {
+                const resolvable = d.status === 'uploaded' || d.status === 'under_review';
+                return (
+                  <tr key={d.id} className="table-row border-t border-line align-top">
+                    <td className="py-2">
+                      {d.loadId ? (
+                        <Link href={`/portal/loads/${d.loadId}`} className="hover:text-copper-400">
+                          {d.loadReference}
+                        </Link>
+                      ) : (
+                        d.loadReference
+                      )}
+                    </td>
+                    <td className="py-2">{DOC_TYPE_LABELS[d.docType] ?? d.docType}</td>
+                    <td className="py-2">
+                      <StatusBadge facet={STATUS_FACET.DOCUMENT} value={d.status} />
+                      {d.expiresAt && (
+                        <span className="text-muted ml-2 text-xs">
+                          exp {new Date(d.expiresAt).toLocaleDateString()}
+                        </span>
+                      )}
+                      {d.status === 'rejected' && d.rejectionReason && (
+                        <p className="text-muted mt-1 text-xs">{d.rejectionReason}</p>
+                      )}
+                    </td>
+                    <td className="py-2 whitespace-nowrap">{new Date(d.createdAt).toLocaleString()}</td>
+                    <td className="py-2">
+                      <div className="flex flex-col gap-2">
+                        {d.downloadUrl ? (
+                          <a href={d.downloadUrl} className="text-copper-500 text-xs" target="_blank" rel="noreferrer">
+                            Download
+                          </a>
+                        ) : (
+                          <span className="text-muted text-xs">—</span>
+                        )}
+                        {canVerify && resolvable && (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <ActionForm action={verifyDocument}>
+                              <input type="hidden" name="orgId" value={active.orgId} />
+                              <input type="hidden" name="documentId" value={d.id} />
+                              <SubmitButton className="btn-copper px-2 py-1 text-xs" pendingLabel="…">
+                                Verify
+                              </SubmitButton>
+                            </ActionForm>
+                            <ActionForm action={rejectDocument} className="flex items-center gap-1">
+                              <input type="hidden" name="orgId" value={active.orgId} />
+                              <input type="hidden" name="documentId" value={d.id} />
+                              <input name="reason" required placeholder="reason" className="input w-28 py-0.5 text-xs" />
+                              <SubmitButton
+                                className="rounded-lg border border-line px-2 py-1 text-xs hover:bg-charcoal-700"
+                                pendingLabel="…"
+                              >
+                                Reject
+                              </SubmitButton>
+                            </ActionForm>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {documentRows.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="py-8 text-muted text-center">
+                  <td colSpan={5} className="py-8 text-muted text-center">
                     No documents yet.
                   </td>
                 </tr>

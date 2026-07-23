@@ -141,3 +141,77 @@ export async function uploadDocument(formData: FormData): Promise<ActionResult> 
   revalidatePath('/portal/documents');
   return { ok: true };
 }
+
+// A document can only be verified/rejected while it is still pending review —
+// not once it is already verified, rejected, superseded, or archived. The
+// UPDATE carries this as a WHERE clause so a stale button is a no-op, not a
+// silent re-decision.
+const RESOLVABLE_STATUSES = ['uploaded', 'under_review'];
+
+/** DOC-01 / D3: mark a document verified — the gate POD/insurance checks read. */
+export async function verifyDocument(formData: FormData): Promise<ActionResult> {
+  const orgId = String(formData.get('orgId') ?? '');
+  const documentId = String(formData.get('documentId') ?? '');
+  const { ctx } = await requirePermission(orgId, PERMISSIONS.DOCUMENT_VERIFY);
+  if (!documentId) return { ok: false, error: 'Missing document.' };
+
+  const supabase = await getServerSupabase();
+  const { data, error } = await supabase
+    .from('documents')
+    .update({ status: 'verified', verified_by: ctx.userId, verified_at: new Date().toISOString(), rejection_reason: null })
+    .eq('id', documentId)
+    .eq('org_id', orgId)
+    .in('status', RESOLVABLE_STATUSES)
+    .select('id, load_id');
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    return { ok: false, error: 'This document is no longer awaiting review — refresh and try again.' };
+  }
+
+  await writeAudit({
+    orgId,
+    actorUserId: ctx.userId,
+    action: AUDIT_ACTIONS.DOCUMENT_VERIFIED,
+    entityType: 'document',
+    entityId: documentId,
+    after: { status: 'verified' },
+  });
+
+  revalidatePath('/portal/documents');
+  return { ok: true };
+}
+
+/** DOC-01 / D3: reject a document with a reason so re-upload is directed. */
+export async function rejectDocument(formData: FormData): Promise<ActionResult> {
+  const orgId = String(formData.get('orgId') ?? '');
+  const documentId = String(formData.get('documentId') ?? '');
+  const reason = String(formData.get('reason') ?? '').trim();
+  const { ctx } = await requirePermission(orgId, PERMISSIONS.DOCUMENT_VERIFY);
+  if (!documentId) return { ok: false, error: 'Missing document.' };
+  if (!reason) return { ok: false, error: 'A rejection reason is required so the sender knows what to fix.' };
+
+  const supabase = await getServerSupabase();
+  const { data, error } = await supabase
+    .from('documents')
+    .update({ status: 'rejected', rejection_reason: reason, verified_by: ctx.userId, verified_at: new Date().toISOString() })
+    .eq('id', documentId)
+    .eq('org_id', orgId)
+    .in('status', RESOLVABLE_STATUSES)
+    .select('id');
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    return { ok: false, error: 'This document is no longer awaiting review — refresh and try again.' };
+  }
+
+  await writeAudit({
+    orgId,
+    actorUserId: ctx.userId,
+    action: AUDIT_ACTIONS.DOCUMENT_REJECTED,
+    entityType: 'document',
+    entityId: documentId,
+    after: { status: 'rejected', reason },
+  });
+
+  revalidatePath('/portal/documents');
+  return { ok: true };
+}

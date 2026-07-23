@@ -17,6 +17,15 @@ describe('RBAC permission matrix', () => {
     expect(can(ROLES.CARRIER_DISPATCH, PERMISSIONS.CUSTOMER_VIEW)).toBe(false);
   });
 
+  it('DOC-01: broker roles can verify documents; carrier/driver cannot', () => {
+    for (const role of [ROLES.ORG_ADMIN, ROLES.BROKER_MANAGER, ROLES.BROKER_DISPATCHER]) {
+      expect(can(role, PERMISSIONS.DOCUMENT_VERIFY)).toBe(true);
+    }
+    // Carriers/drivers upload documents but must not verify them.
+    expect(can(ROLES.CARRIER_DISPATCH, PERMISSIONS.DOCUMENT_VERIFY)).toBe(false);
+    expect(can(ROLES.DRIVER, PERMISSIONS.DOCUMENT_VERIFY)).toBe(false);
+  });
+
   it('FR-RBAC-04: broker manager can approve pricing overrides', () => {
     expect(can(ROLES.BROKER_MANAGER, PERMISSIONS.PRICING_OVERRIDE_APPROVE)).toBe(true);
   });
