@@ -7,6 +7,7 @@ import { ActionForm } from '../_components/action-form';
 import { SubmitButton } from '../_components/submit-button';
 import { StatusBadge, STATUS_FACET } from '../_components/status-badge';
 import { uploadDocument, verifyDocument, rejectDocument } from './actions';
+import { UPLOADABLE_DOC_TYPES, DOC_TYPE_LABELS } from '@/lib/documents/types';
 
 interface LoadOption {
   id: string;
@@ -37,14 +38,6 @@ interface DocumentDisplayRow {
   expiresAt: string | null;
   rejectionReason: string | null;
 }
-
-const DOC_TYPE_LABELS: Record<string, string> = {
-  bol: 'Bill of Lading',
-  pod: 'Proof of Delivery',
-  receipt: 'Receipt',
-  ratecon_pdf: 'Signed Rate Confirmation',
-  other: 'Other',
-};
 
 const SIGNED_URL_TTL_SECONDS = 60;
 
@@ -155,10 +148,11 @@ export default async function DocumentsPage() {
           <div>
             <label className="block text-sm mb-1">Document type</label>
             <select name="docType" required className="input">
-              <option value="bol">Bill of Lading</option>
-              <option value="pod">Proof of Delivery</option>
-              <option value="receipt">Receipt</option>
-              <option value="other">Other</option>
+              {UPLOADABLE_DOC_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {DOC_TYPE_LABELS[t]}
+                </option>
+              ))}
             </select>
           </div>
           <div>
