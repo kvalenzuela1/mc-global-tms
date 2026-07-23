@@ -10,6 +10,7 @@ import { getOrgComplianceResults } from '@/lib/compliance/policy.server';
 import { buildAttentionItems } from '@/lib/portal/attention';
 import { StatusBadge, STATUS_FACET } from './_components/status-badge';
 import { badgeClassFor } from '@/lib/ui/status-tone';
+import { resolveLandingKind, LANDING_KIND } from '@/lib/portal/landing';
 
 interface PriorityLoad {
   id: string;
@@ -33,6 +34,17 @@ export default async function PortalOverview() {
   if (!active) return null;
 
   const role = active.role;
+
+  // FR-UX-03: route each role to a real home screen. Shipper and driver get
+  // tailored landings instead of falling through to the permission list.
+  const landing = resolveLandingKind(role);
+  if (landing === LANDING_KIND.DRIVER) {
+    return <DriverAppHome orgName={active.orgName} />;
+  }
+  if (landing === LANDING_KIND.SHIPPER) {
+    return <ShipperHome orgName={active.orgName} />;
+  }
+
   const canRfq = can(role, PERMISSIONS.RFQ_VIEW);
   const canPricing = can(role, PERMISSIONS.PRICING_VIEW);
   const canLoads = can(role, PERMISSIONS.LOAD_VIEW);
@@ -40,9 +52,7 @@ export default async function PortalOverview() {
   const canSendRatecon = can(role, PERMISSIONS.RATECON_SEND);
   const canCreateRfq = can(role, PERMISSIONS.RFQ_CREATE);
 
-  const hasDashboard = canRfq || canPricing || canLoads || canRatecon;
-
-  if (!hasDashboard) {
+  if (landing === LANDING_KIND.PERMISSIONS) {
     const perms = permissionsFor(role);
     return (
       <div>
@@ -435,6 +445,117 @@ export default async function PortalOverview() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+interface ShipperShipment {
+  id: string;
+  reference: string;
+  origin: string;
+  destination: string;
+  status: LoadStatus;
+}
+
+/**
+ * Shipper home — the customer's tracking surface + a path to request a quote.
+ * RLS scopes `loads` to this shipper's own shipments (app_shipper_user_can_access)
+ * and the masked view nulls commercial_snapshot for non-broker orgs, so no rate
+ * or margin leaks here.
+ */
+async function ShipperHome({ orgName }: { orgName: string }) {
+  const supabase = await getServerSupabase();
+  const { data } = await supabase
+    .from('loads')
+    .select('id, reference, origin, destination, status')
+    .order('created_at', { ascending: false })
+    .limit(12);
+  const shipments = (data as ShipperShipment[]) ?? [];
+
+  const today = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Your shipments</h1>
+          <p className="text-muted mt-1">
+            {today} · {orgName}
+          </p>
+        </div>
+        <Link href="/portal/rfqs/new" className="btn-copper px-4 py-2 text-sm whitespace-nowrap">
+          + Request a quote
+        </Link>
+      </div>
+
+      <div className="panel p-6 mt-6">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold">Tracking</h2>
+          <Link href="/portal/documents" className="text-xs text-copper-400 hover:text-copper-300">
+            Documents →
+          </Link>
+        </div>
+        {shipments.length === 0 ? (
+          <p className="text-sm text-muted mt-3">
+            No shipments yet. Request a quote to get one moving.
+          </p>
+        ) : (
+          <ul className="mt-3 space-y-3">
+            {shipments.map((s) => (
+              <li
+                key={s.id}
+                className="table-row border-t border-line pt-3 pb-1 -mx-2 px-2 rounded-lg text-sm flex items-center justify-between gap-3"
+              >
+                <p className="min-w-0 font-medium">
+                  {s.reference} · {s.origin} → {s.destination}
+                </p>
+                <StatusBadge facet={STATUS_FACET.LOAD} value={s.status} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Driver home — a pointer, not a dashboard. Drivers work from the dedicated
+ * mobile app (check-in/out, POD scanning, GPS); the web portal is for office
+ * staff. Until the app ships, the Driver Brief remains their working surface.
+ */
+function DriverAppHome({ orgName }: { orgName: string }) {
+  return (
+    <div>
+      <h1 className="text-2xl font-bold">Welcome</h1>
+      <p className="text-muted mt-1">Driver · {orgName}</p>
+      <div className="panel p-6 mt-6 max-w-xl">
+        <h2 className="font-semibold">Your loads live in the driver app</h2>
+        <p className="text-sm text-muted mt-2">
+          A dedicated MC Global driver app is on the way — check-in and check-out,
+          document scanning, and load details, built for the road rather than the
+          desk.
+        </p>
+        <p className="text-sm text-muted mt-3">
+          In the meantime, your current assignment and paperwork are in your Driver
+          Brief.
+        </p>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <Link href="/portal/driver" className="btn-copper px-4 py-2 text-sm">
+            Open Driver Brief
+          </Link>
+          <Link
+            href="/portal/documents"
+            className="rounded-[10px] border border-line px-4 py-2 text-sm text-ink"
+          >
+            Upload a document
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }
