@@ -37,6 +37,14 @@ describe('status tone', () => {
     expect(toneFor(STATUS_FACET.RATECON, 'signed')).toBe(STATUS_TONE.OK);
     expect(toneFor(STATUS_FACET.CARRIER, 'approved')).toBe(STATUS_TONE.OK);
     expect(toneFor(STATUS_FACET.COMPLIANCE, 'compliant')).toBe(STATUS_TONE.OK);
+    expect(toneFor(STATUS_FACET.CUSTOMER, 'active')).toBe(STATUS_TONE.OK);
+  });
+
+  it('FR-UX-01/02: customer relationship states carry tone + label', () => {
+    expect(toneFor(STATUS_FACET.CUSTOMER, 'on_hold')).toBe(STATUS_TONE.WARN);
+    expect(toneFor(STATUS_FACET.CUSTOMER, 'prospect')).toBe(STATUS_TONE.MUTED);
+    expect(labelFor(STATUS_FACET.CUSTOMER, 'on_hold')).toBe('On hold');
+    expect(toneFor(STATUS_FACET.CUSTOMER, 'nonsense')).toBe(STATUS_TONE.MUTED);
   });
 
   it('FR-UX-01: failure states are danger, not muted', () => {

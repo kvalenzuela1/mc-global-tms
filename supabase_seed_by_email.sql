@@ -65,6 +65,18 @@ insert into shippers (id, org_id, shipper_org_id, name, margin_band) values
   ('55555555-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111',
      '33333333-3333-3333-3333-333333333333','Summit Retail Co.','standard');
 
+-- Customer contacts + locations (0012). Children of shippers via FK, so the
+-- `truncate ... shippers cascade` above clears them on re-seed. Their presence
+-- makes the CUS-01 RLS checks in verify-rls.mjs real (broker sees, driver does not).
+insert into customer_contacts (org_id, shipper_id, name, title, email, role, is_primary) values
+  ('11111111-1111-1111-1111-111111111111','55555555-0000-0000-0000-000000000001',
+     'Dana Cole','Logistics Manager','dana@summitretail.example','operations', true);
+
+insert into customer_locations
+  (org_id, shipper_id, label, address_line1, city, state, postal_code, appointment_required) values
+  ('11111111-1111-1111-1111-111111111111','55555555-0000-0000-0000-000000000001',
+     'Atlanta DC','1200 Fulfillment Way','Atlanta','GA','30336', true);
+
 insert into carriers (id, org_id, carrier_org_id, name, dot_number, mc_number, status) values
   ('44444444-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111',
      '22222222-2222-2222-2222-222222222222','Horizon Freight LLC','2222220','MC-222222','approved'),

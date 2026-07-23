@@ -6,6 +6,17 @@ import { ROLES } from '@/lib/rbac/roles';
 import { can, canSeeCommercials, PERMISSIONS } from '@/lib/rbac/permissions';
 
 describe('RBAC permission matrix', () => {
+  it('CUS-01: broker roles can view and manage customers; non-brokers cannot', () => {
+    for (const role of [ROLES.ORG_ADMIN, ROLES.BROKER_MANAGER, ROLES.BROKER_DISPATCHER]) {
+      expect(can(role, PERMISSIONS.CUSTOMER_VIEW)).toBe(true);
+      expect(can(role, PERMISSIONS.CUSTOMER_MANAGE)).toBe(true);
+    }
+    // A shipper can raise RFQs but must not read or edit the broker's customer book.
+    expect(can(ROLES.SHIPPER, PERMISSIONS.CUSTOMER_VIEW)).toBe(false);
+    expect(can(ROLES.DRIVER, PERMISSIONS.CUSTOMER_MANAGE)).toBe(false);
+    expect(can(ROLES.CARRIER_DISPATCH, PERMISSIONS.CUSTOMER_VIEW)).toBe(false);
+  });
+
   it('FR-RBAC-04: broker manager can approve pricing overrides', () => {
     expect(can(ROLES.BROKER_MANAGER, PERMISSIONS.PRICING_OVERRIDE_APPROVE)).toBe(true);
   });
