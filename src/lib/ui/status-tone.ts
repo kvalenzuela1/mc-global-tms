@@ -50,6 +50,7 @@ export const STATUS_FACET = {
   CARRIER: 'carrier',
   COMPLIANCE: 'compliance',
   CUSTOMER: 'customer',
+  DOCUMENT: 'document',
 } as const;
 
 export type StatusFacet = (typeof STATUS_FACET)[keyof typeof STATUS_FACET];
@@ -135,6 +136,17 @@ const CUSTOMER_TONES: Record<string, ToneEntry> = {
   inactive: { tone: STATUS_TONE.MUTED, label: 'Inactive' },
 };
 
+/** `documents.status` — the document lifecycle (see 0013_document_lifecycle.sql). */
+const DOCUMENT_TONES: Record<string, ToneEntry> = {
+  requested: { tone: STATUS_TONE.MUTED, label: 'Requested' },
+  uploaded: { tone: STATUS_TONE.WARN, label: 'Uploaded — needs review' },
+  under_review: { tone: STATUS_TONE.WARN, label: 'Under review' },
+  verified: { tone: STATUS_TONE.OK, label: 'Verified' },
+  rejected: { tone: STATUS_TONE.DANGER, label: 'Rejected' },
+  superseded: { tone: STATUS_TONE.MUTED, label: 'Superseded' },
+  archived: { tone: STATUS_TONE.MUTED, label: 'Archived' },
+};
+
 /** Fallback for a status string this module does not know about. */
 const UNKNOWN: StatusTone = STATUS_TONE.MUTED;
 
@@ -159,6 +171,8 @@ export function toneFor(facet: StatusFacet, value: string): StatusTone {
       return COMPLIANCE_TONES[value]?.tone ?? UNKNOWN;
     case STATUS_FACET.CUSTOMER:
       return CUSTOMER_TONES[value]?.tone ?? UNKNOWN;
+    case STATUS_FACET.DOCUMENT:
+      return DOCUMENT_TONES[value]?.tone ?? UNKNOWN;
     default:
       return UNKNOWN;
   }
@@ -185,6 +199,8 @@ export function labelFor(facet: StatusFacet, value: string): string {
       return COMPLIANCE_TONES[value]?.label ?? humanise(value);
     case STATUS_FACET.CUSTOMER:
       return CUSTOMER_TONES[value]?.label ?? humanise(value);
+    case STATUS_FACET.DOCUMENT:
+      return DOCUMENT_TONES[value]?.label ?? humanise(value);
     default:
       return humanise(value);
   }

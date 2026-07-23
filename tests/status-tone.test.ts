@@ -47,6 +47,14 @@ describe('status tone', () => {
     expect(toneFor(STATUS_FACET.CUSTOMER, 'nonsense')).toBe(STATUS_TONE.MUTED);
   });
 
+  it('FR-UX-01/02: document lifecycle states carry tone + label', () => {
+    expect(toneFor(STATUS_FACET.DOCUMENT, 'verified')).toBe(STATUS_TONE.OK);
+    expect(toneFor(STATUS_FACET.DOCUMENT, 'rejected')).toBe(STATUS_TONE.DANGER);
+    expect(toneFor(STATUS_FACET.DOCUMENT, 'uploaded')).toBe(STATUS_TONE.WARN);
+    expect(labelFor(STATUS_FACET.DOCUMENT, 'verified')).toBe('Verified');
+    expect(toneFor(STATUS_FACET.DOCUMENT, 'nonsense')).toBe(STATUS_TONE.MUTED);
+  });
+
   it('FR-UX-01: failure states are danger, not muted', () => {
     // The regression this module exists to fix: a rejected quote and a
     // suspended carrier both used to render in the same neutral grey as an
