@@ -7,6 +7,7 @@ import { LOAD_STATUS, LOAD_STATUS_LABELS, LOAD_STATUS_SEQUENCE, type LoadStatus 
 import { RFQ_STATUS_LABELS, RFQ_STATUS_SEQUENCE, type RfqStatus } from '@/lib/rfqs/lifecycle';
 import { ACCESSORIAL_TYPE_LABELS, type AccessorialType } from '@/lib/accessorials/calc';
 import { getOrgComplianceResults } from '@/lib/compliance/policy.server';
+import { buildAttentionItems } from '@/lib/portal/attention';
 import { StatusBadge, STATUS_FACET } from './_components/status-badge';
 import { badgeClassFor } from '@/lib/ui/status-tone';
 
@@ -186,6 +187,64 @@ export default async function PortalOverview() {
     carrierCompliance = { compliant, blocked };
   }
 
+  // FR-UX-04: "Needs attention" worklist — actionable items that are waiting on
+  // someone. Each count is gated so it only shows for a viewer who can act on
+  // it (releasing a load, approving a quote, verifying/chasing a document);
+  // carriers-blocked reuses the compliance rollup computed just above.
+  const canRelease = can(role, PERMISSIONS.LOAD_RELEASE_DRIVER);
+  const canApproveQuotes = can(role, PERMISSIONS.PRICING_OVERRIDE_APPROVE);
+  const canVerifyDocs = can(role, PERMISSIONS.DOCUMENT_VERIFY);
+
+  let loadsAwaitingRelease = 0;
+  if (canRelease) {
+    const { count } = await supabase
+      .from('loads_data')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', active.orgId)
+      .eq('status', LOAD_STATUS.SIGNED_AWAITING_BROKER_RELEASE);
+    loadsAwaitingRelease = count ?? 0;
+  }
+
+  let quotesPendingApproval = 0;
+  if (canApproveQuotes) {
+    const { count } = await supabase
+      .from('quotes')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', active.orgId)
+      .eq('status', 'pending_approval');
+    quotesPendingApproval = count ?? 0;
+  }
+
+  let documentsAwaitingReview = 0;
+  let documentsExpiringSoon = 0;
+  if (canVerifyDocs) {
+    const { count: reviewCount } = await supabase
+      .from('documents')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', active.orgId)
+      .in('status', ['uploaded', 'under_review']);
+    documentsAwaitingReview = reviewCount ?? 0;
+
+    // expires_at within 30 days or already past — the soonest-lapsing paperwork
+    // (e.g. an insurance COI) needs chasing before it expires.
+    const soon = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const { count: expiringCount } = await supabase
+      .from('documents')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', active.orgId)
+      .not('expires_at', 'is', null)
+      .lte('expires_at', soon);
+    documentsExpiringSoon = expiringCount ?? 0;
+  }
+
+  const attentionItems = buildAttentionItems({
+    carriersBlocked: carrierCompliance?.blocked ?? 0,
+    documentsExpiringSoon,
+    loadsAwaitingRelease,
+    quotesPendingApproval,
+    documentsAwaitingReview,
+  });
+
   const hasOpsSnapshot = canRfq || canLoads || showCommercials || canViewCarriers;
 
   const today = new Date().toLocaleDateString('en-US', {
@@ -218,6 +277,25 @@ export default async function PortalOverview() {
               <p className="text-3xl font-bold mt-2">{t.count}</p>
             </Link>
           ))}
+        </div>
+      )}
+
+      {attentionItems.length > 0 && (
+        <div className="panel p-6 mt-6">
+          <h2 className="font-semibold">Needs attention</h2>
+          <ul className="mt-3">
+            {attentionItems.map((item) => (
+              <li key={item.key} className="border-t border-line first:border-t-0">
+                <Link
+                  href={item.href}
+                  className="flex items-center justify-between gap-3 py-2.5 text-sm hover:text-copper-300"
+                >
+                  <span>{item.label}</span>
+                  <span className={`badge badge-${item.tone} tabular-nums`}>{item.count}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
