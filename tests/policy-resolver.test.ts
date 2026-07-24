@@ -2,8 +2,14 @@
  * FR-CFG-03 — Versioned config resolver: platform -> organization -> exception.
  */
 import { describe, it, expect } from 'vitest';
-import { resolvePolicyValue, resolvePricingConfig, resolveComplianceThresholds } from '@/lib/config/policy-resolver';
+import {
+  resolvePolicyValue,
+  resolvePricingConfig,
+  resolveComplianceThresholds,
+  resolveLoadMarginConfig,
+} from '@/lib/config/policy-resolver';
 import { DEFAULT_PRICING_CONFIG } from '@/lib/pricing/calc';
+import { DEFAULT_LOAD_MARGIN_CONFIG } from '@/lib/pricing/margin';
 import { DEFAULT_COMPLIANCE_THRESHOLDS } from '@/lib/compliance/gate';
 
 const NOW = '2026-07-20T00:00:00.000Z';
@@ -126,5 +132,37 @@ describe('policy resolver', () => {
     expect(thresholds.minAutoLiabilityCents).toBe(200_000_00);
     expect(thresholds.minCargoCents).toBe(DEFAULT_COMPLIANCE_THRESHOLDS.minCargoCents);
     expect(thresholds.warnDays).toEqual(DEFAULT_COMPLIANCE_THRESHOLDS.warnDays);
+  });
+});
+
+describe('FR-MGN-04: resolveLoadMarginConfig (org house default tier)', () => {
+  it('returns the fallback when no load_margins policy exists', () => {
+    const cfg = resolveLoadMarginConfig([], DEFAULT_LOAD_MARGIN_CONFIG, NOW);
+    expect(cfg).toEqual({ brokerPercent: 0.18, dispatchPercent: 0.05 });
+  });
+
+  it('an org-scope row overrides the platform seed', () => {
+    const platform = {
+      orgId: null,
+      scope: 'platform' as const,
+      policyKey: 'load_margins',
+      version: 1,
+      value: { broker_percent: 0.18, dispatch_percent: 0.05 },
+      effectiveAt: '2026-01-01T00:00:00.000Z',
+      isActive: true,
+    };
+    const org = {
+      orgId: 'org-1',
+      scope: 'organization' as const,
+      policyKey: 'load_margins',
+      version: 1,
+      value: { broker_percent: 0.2 },
+      effectiveAt: '2026-02-01T00:00:00.000Z',
+      isActive: true,
+    };
+    const cfg = resolveLoadMarginConfig([platform, org], DEFAULT_LOAD_MARGIN_CONFIG, NOW);
+    // broker from the org row; dispatch falls back field-by-field to the seed
+    expect(cfg.brokerPercent).toBe(0.2);
+    expect(cfg.dispatchPercent).toBe(0.05);
   });
 });

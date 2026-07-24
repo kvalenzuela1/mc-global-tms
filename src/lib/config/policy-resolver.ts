@@ -10,6 +10,7 @@
  */
 
 import type { PricingConfig } from '@/lib/pricing/calc';
+import type { LoadMarginConfig } from '@/lib/pricing/margin';
 import type { ComplianceThresholds } from '@/lib/compliance/gate';
 
 export type PolicyScope = 'platform' | 'organization' | 'exception';
@@ -88,6 +89,26 @@ export function resolvePricingConfig(
     targetMarginPercent: numberOr(value.target_margin_percent, fallback.targetMarginPercent),
     quickPayFeePercent: numberOr(value.quick_pay_fee_percent, fallback.quickPayFeePercent),
     factoringCostPercent: numberOr(value.factoring_cost_percent, fallback.factoringCostPercent),
+  };
+}
+
+/**
+ * Resolve the `load_margins` policy key into a `LoadMarginConfig` (the org
+ * house default for the two reference-model percentages), falling back to
+ * `fallback` (normally `DEFAULT_LOAD_MARGIN_CONFIG`) field-by-field. This is
+ * only the org/platform tier of the FR-MGN-04 chain — per-customer and
+ * per-load overrides are applied by `resolveMarginPercents`.
+ */
+export function resolveLoadMarginConfig(
+  rows: PolicyRow[],
+  fallback: LoadMarginConfig,
+  now: string = new Date().toISOString(),
+): LoadMarginConfig {
+  const value = resolvePolicyValue(rows, 'load_margins', now);
+  if (!value) return fallback;
+  return {
+    brokerPercent: numberOr(value.broker_percent, fallback.brokerPercent),
+    dispatchPercent: numberOr(value.dispatch_percent, fallback.dispatchPercent),
   };
 }
 

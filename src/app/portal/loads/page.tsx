@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import { getSessionContext } from '@/lib/tenant/context';
-import { can, PERMISSIONS } from '@/lib/rbac/permissions';
+import { can, visibleMarginLines, PERMISSIONS } from '@/lib/rbac/permissions';
 import { isInternalRole } from '@/lib/rbac/roles';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { type LoadStatus } from '@/lib/loads/lifecycle';
-import { readSnapshotCents } from '@/lib/pricing/snapshot';
+import { computeLoadFinancials, resolveMarginPercents } from '@/lib/pricing/margin';
+import { resolveOrgLoadMarginConfig } from '@/lib/config/policies.server';
 import { StatusBadge, STATUS_FACET } from '../_components/status-badge';
 
 interface LoadRow {
@@ -13,8 +14,14 @@ interface LoadRow {
   origin: string;
   destination: string;
   status: LoadStatus;
-  commercial_snapshot: Record<string, unknown> | null;
   carrier_name: string | null;
+}
+
+interface LoadFinancialRow {
+  id: string;
+  shipper_cost_cents: number | null;
+  broker_percent: number | null;
+  dispatch_percent: number | null;
 }
 
 interface AccessorialRow {
@@ -41,6 +48,7 @@ export default async function LoadsPage() {
   // check on top of that, not the only thing standing between a driver and
   // the margin.
   const showCommercials = isInternalRole(active.role);
+  const vis = visibleMarginLines(active.role);
   const canCreate = can(active.role, PERMISSIONS.LOAD_CREATE);
 
   const supabase = await getServerSupabase();
@@ -51,10 +59,35 @@ export default async function LoadsPage() {
   // tenant's — filtering on it here would wrongly hide their loads.
   const { data: loadData, error } = await supabase
     .from('loads')
-    .select('id, reference, origin, destination, status, commercial_snapshot, carrier_name')
+    .select('id, reference, origin, destination, status, carrier_name')
     .order('created_at', { ascending: false });
   if (error) throw error;
   const loads = (loadData as unknown as LoadRow[]) ?? [];
+
+  // Carrier Pay is visible to every internal role (dispatch-side). The masked
+  // financial inputs come from the `load_financials` view (migration 0011),
+  // and the org house default backstops any load with null percents (booked
+  // pre-feature). The per-line breakdown lives on each load's detail page.
+  const financialInputs = new Map<string, LoadFinancialRow>();
+  let orgMarginDefault: Awaited<ReturnType<typeof resolveOrgLoadMarginConfig>> | null = null;
+  if (vis.carrierPay) {
+    orgMarginDefault = await resolveOrgLoadMarginConfig(active.orgId);
+    const { data: finData } = await supabase
+      .from('load_financials')
+      .select('id, shipper_cost_cents, broker_percent, dispatch_percent');
+    for (const row of (finData as LoadFinancialRow[]) ?? []) financialInputs.set(row.id, row);
+  }
+  function carrierPayCentsFor(l: LoadRow): number | null {
+    const fin = financialInputs.get(l.id);
+    if (!orgMarginDefault || !fin || typeof fin.shipper_cost_cents !== 'number' || fin.shipper_cost_cents <= 0) {
+      return null;
+    }
+    const { brokerPercent, dispatchPercent } = resolveMarginPercents({
+      load: { brokerPercent: fin.broker_percent, dispatchPercent: fin.dispatch_percent },
+      orgDefault: orgMarginDefault,
+    });
+    return computeLoadFinancials({ shipperCostCents: fin.shipper_cost_cents, brokerPercent, dispatchPercent }).carrierPayCents;
+  }
 
   // Accessorials are broker-org-commercial data (same RLS shape as quotes),
   // so this query naturally returns nothing for external roles — the
@@ -98,15 +131,13 @@ export default async function LoadsPage() {
               <th className="pb-2">Lane</th>
               <th className="pb-2">Carrier</th>
               <th className="pb-2">Status</th>
-              {showCommercials && <th className="pb-2">Margin</th>}
+              {vis.carrierPay && <th className="pb-2">Carrier Pay</th>}
               {showCommercials && <th className="pb-2">Accessorials</th>}
             </tr>
           </thead>
           <tbody>
             {loads.map((l) => {
-              const margin = showCommercials
-                ? readSnapshotCents(l.commercial_snapshot, 'marginAmountCents', 'margin_amount_cents')
-                : undefined;
+              const carrierPay = vis.carrierPay ? carrierPayCentsFor(l) : null;
               return (
                 <tr key={l.id} className="table-row border-t border-line">
                   <td className="py-2">
@@ -121,9 +152,9 @@ export default async function LoadsPage() {
                   <td className="py-2">
                     <StatusBadge facet={STATUS_FACET.LOAD} value={l.status} />
                   </td>
-                  {showCommercials && (
-                    <td className="py-2">
-                      {typeof margin === 'number' ? `$${(margin / 100).toFixed(2)}` : '—'}
+                  {vis.carrierPay && (
+                    <td className="py-2 tabular-nums">
+                      {typeof carrierPay === 'number' ? `$${(carrierPay / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                     </td>
                   )}
                   {showCommercials && (
@@ -142,7 +173,7 @@ export default async function LoadsPage() {
             {loads.length === 0 && (
               <tr>
                 <td
-                  colSpan={4 + (showCommercials ? 2 : 0)}
+                  colSpan={4 + (vis.carrierPay ? 1 : 0) + (showCommercials ? 1 : 0)}
                   className="py-8 text-muted text-center"
                 >
                   No loads yet.

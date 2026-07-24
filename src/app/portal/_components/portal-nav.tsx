@@ -16,6 +16,7 @@ import {
   BadgeCheck,
   Building2,
   Receipt,
+  Settings,
   type LucideIcon,
 } from 'lucide-react';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
@@ -44,6 +45,7 @@ const NAV: { href: string; label: string; perm: NavPerm | NavPerm[] | null; icon
   { href: '/portal/finance', label: 'Invoicing', perm: PERMISSIONS.INVOICE_CREATE, icon: Receipt },
   { href: '/portal/approvals', label: 'Approvals', perm: [PERMISSIONS.PRICING_OVERRIDE_APPROVE, PERMISSIONS.COMPLIANCE_OVERRIDE], icon: BadgeCheck },
   { href: '/portal/audit', label: 'Audit Trail', perm: PERMISSIONS.AUDIT_VIEW, icon: ScrollText },
+  { href: '/portal/settings', label: 'Settings', perm: PERMISSIONS.MARGIN_CONFIG, icon: Settings },
 ];
 
 /**

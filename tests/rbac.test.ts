@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { ROLES } from '@/lib/rbac/roles';
-import { can, canSeeCommercials, PERMISSIONS } from '@/lib/rbac/permissions';
+import { can, canSeeCommercials, visibleMarginLines, PERMISSIONS } from '@/lib/rbac/permissions';
 
 describe('RBAC permission matrix', () => {
   it('CUS-01: broker roles can view and manage customers; non-brokers cannot', () => {
@@ -73,5 +73,47 @@ describe('RBAC permission matrix', () => {
     expect(can(ROLES.SHIPPER, PERMISSIONS.SHIPPER_TRACK)).toBe(true);
     expect(can(ROLES.SHIPPER, PERMISSIONS.LOAD_CREATE)).toBe(false);
     expect(can(ROLES.SHIPPER, PERMISSIONS.COMMERCIALS_VIEW)).toBe(false);
+  });
+});
+
+describe('FR-MGN-05: load financial line visibility by role', () => {
+  it('Owner (org_admin) sees all four lines and can configure percents', () => {
+    expect(visibleMarginLines(ROLES.ORG_ADMIN)).toEqual({
+      shipperCost: true, broker: true, dispatch: true, carrierPay: true, any: true,
+    });
+    expect(can(ROLES.ORG_ADMIN, PERMISSIONS.MARGIN_CONFIG)).toBe(true);
+  });
+
+  it('Broker (manager) sees all four lines and can configure percents', () => {
+    expect(visibleMarginLines(ROLES.BROKER_MANAGER)).toEqual({
+      shipperCost: true, broker: true, dispatch: true, carrierPay: true, any: true,
+    });
+    expect(can(ROLES.BROKER_MANAGER, PERMISSIONS.MARGIN_CONFIG)).toBe(true);
+  });
+
+  it('Dispatcher sees ONLY dispatch-side, never Shipper Cost or Broker margin', () => {
+    expect(visibleMarginLines(ROLES.BROKER_DISPATCHER)).toEqual({
+      shipperCost: false, broker: false, dispatch: true, carrierPay: true, any: true,
+    });
+    // cannot edit percents
+    expect(can(ROLES.BROKER_DISPATCHER, PERMISSIONS.MARGIN_CONFIG)).toBe(false);
+  });
+
+  it('Invoicing sees both sides (view) but cannot configure percents', () => {
+    expect(visibleMarginLines(ROLES.INVOICING)).toEqual({
+      shipperCost: true, broker: true, dispatch: true, carrierPay: true, any: true,
+    });
+    expect(can(ROLES.INVOICING, PERMISSIONS.MARGIN_CONFIG)).toBe(false);
+    expect(can(ROLES.INVOICING, PERMISSIONS.LOAD_VIEW)).toBe(true);
+    expect(can(ROLES.INVOICING, PERMISSIONS.LOAD_CREATE)).toBe(false);
+    expect(can(ROLES.INVOICING, PERMISSIONS.INVOICE_CREATE)).toBe(true);
+  });
+
+  it('Shipper, Carrier, and Driver see no financial lines at all', () => {
+    for (const role of [ROLES.SHIPPER, ROLES.CARRIER_DISPATCH, ROLES.DRIVER]) {
+      const v = visibleMarginLines(role);
+      expect(v.any).toBe(false);
+      expect(can(role, PERMISSIONS.MARGIN_CONFIG)).toBe(false);
+    }
   });
 });

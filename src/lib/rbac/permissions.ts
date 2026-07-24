@@ -38,6 +38,13 @@ export const PERMISSIONS = {
   // Commercial visibility (rates, margin, invoices, settlement, Quick Pay)
   COMMERCIALS_VIEW: 'commercials:view',
 
+  // Load financial model (reference model: Shipper Cost / Broker / Dispatch /
+  // Carrier Pay). Two view grants map to the two "sides" the client's matrix
+  // splits on; the config grant edits default/override percentages.
+  MARGIN_BROKER_VIEW: 'margin:broker_view', // Shipper Cost + Broker margin
+  MARGIN_DISPATCH_VIEW: 'margin:dispatch_view', // Dispatch margin + Carrier Pay
+  MARGIN_CONFIG: 'margin:config', // edit default / per-customer / per-load %
+
   // Carriers & compliance
   CARRIER_VIEW: 'carrier:view',
   CARRIER_MANAGE: 'carrier:manage',
@@ -86,6 +93,8 @@ const MATRIX: Record<Role, Permission[]> = {
     PERMISSIONS.CUSTOMER_VIEW, PERMISSIONS.CUSTOMER_MANAGE,
     PERMISSIONS.PRICING_VIEW, PERMISSIONS.PRICING_OVERRIDE,
     PERMISSIONS.PRICING_OVERRIDE_APPROVE, PERMISSIONS.COMMERCIALS_VIEW,
+    PERMISSIONS.MARGIN_BROKER_VIEW, PERMISSIONS.MARGIN_DISPATCH_VIEW,
+    PERMISSIONS.MARGIN_CONFIG,
     PERMISSIONS.CARRIER_VIEW, PERMISSIONS.CARRIER_MANAGE,
     PERMISSIONS.COMPLIANCE_REVIEW, PERMISSIONS.COMPLIANCE_OVERRIDE,
     PERMISSIONS.RATECON_SEND, PERMISSIONS.RATECON_VIEW,
@@ -101,6 +110,8 @@ const MATRIX: Record<Role, Permission[]> = {
     PERMISSIONS.CUSTOMER_VIEW, PERMISSIONS.CUSTOMER_MANAGE,
     PERMISSIONS.PRICING_VIEW, PERMISSIONS.PRICING_OVERRIDE,
     PERMISSIONS.PRICING_OVERRIDE_APPROVE, PERMISSIONS.COMMERCIALS_VIEW,
+    PERMISSIONS.MARGIN_BROKER_VIEW, PERMISSIONS.MARGIN_DISPATCH_VIEW,
+    PERMISSIONS.MARGIN_CONFIG,
     PERMISSIONS.CARRIER_VIEW, PERMISSIONS.CARRIER_MANAGE,
     PERMISSIONS.COMPLIANCE_REVIEW,
     PERMISSIONS.RATECON_SEND, PERMISSIONS.RATECON_VIEW,
@@ -114,6 +125,10 @@ const MATRIX: Record<Role, Permission[]> = {
     PERMISSIONS.RFQ_VIEW, PERMISSIONS.RFQ_CREATE, PERMISSIONS.QUOTE_CREATE,
     PERMISSIONS.CUSTOMER_VIEW, PERMISSIONS.CUSTOMER_MANAGE,
     PERMISSIONS.PRICING_VIEW, PERMISSIONS.COMMERCIALS_VIEW,
+    // Dispatch-side only: sees the Dispatch margin + Carrier Pay lines, never
+    // Shipper Cost or the Broker margin (so the broker margin can't be backed
+    // out arithmetically). No MARGIN_CONFIG — dispatchers can't edit percents.
+    PERMISSIONS.MARGIN_DISPATCH_VIEW,
     PERMISSIONS.CARRIER_VIEW, PERMISSIONS.COMPLIANCE_REVIEW,
     PERMISSIONS.RATECON_SEND, PERMISSIONS.RATECON_VIEW,
     PERMISSIONS.MILESTONE_RECORD, PERMISSIONS.DOCUMENT_UPLOAD,
@@ -135,6 +150,16 @@ const MATRIX: Record<Role, Permission[]> = {
   [ROLES.SHIPPER]: [
     PERMISSIONS.RFQ_CREATE, PERMISSIONS.SHIPPER_TRACK,
     PERMISSIONS.DOCUMENT_VIEW,
+  ],
+  [ROLES.INVOICING]: [
+    // Read-all loads (no create/edit/transition), view BOTH margin sides for
+    // reconciliation, and manage invoices/payables (M6). No margin-config, no
+    // settings/user-management.
+    PERMISSIONS.LOAD_VIEW,
+    PERMISSIONS.MARGIN_BROKER_VIEW, PERMISSIONS.MARGIN_DISPATCH_VIEW,
+    PERMISSIONS.COMMERCIALS_VIEW,
+    PERMISSIONS.INVOICE_CREATE, PERMISSIONS.SETTLEMENT_CREATE,
+    PERMISSIONS.DOCUMENT_VIEW, PERMISSIONS.AUDIT_VIEW,
   ],
   [ROLES.PLATFORM_SUPERADMIN]: [
     // Operates only in the separate console; no tenant data permissions here.
@@ -166,4 +191,36 @@ export function permissionsFor(role: Role): Permission[] {
  */
 export function canSeeCommercials(roles: Role[] | Role): boolean {
   return can(roles, PERMISSIONS.COMMERCIALS_VIEW);
+}
+
+/** Which of the four reference-model financial lines a subject may see. */
+export interface MarginLineVisibility {
+  shipperCost: boolean;
+  broker: boolean;
+  dispatch: boolean;
+  carrierPay: boolean;
+  /** True when the subject may see at least one line (renders the breakdown). */
+  any: boolean;
+}
+
+/**
+ * The reference model has four linked lines — Shipper Cost, Broker margin,
+ * Dispatch margin, Carrier Pay — and any three reveal the fourth. To keep the
+ * two margins genuinely separable, the client's matrix buckets them:
+ *   broker-side   = Shipper Cost + Broker margin  (MARGIN_BROKER_VIEW)
+ *   dispatch-side = Dispatch margin + Carrier Pay (MARGIN_DISPATCH_VIEW)
+ * A Dispatcher (dispatch-side only) therefore never sees Shipper Cost, so the
+ * Broker margin can't be derived. This is the single source of truth every
+ * view uses to decide which lines to render.
+ */
+export function visibleMarginLines(roles: Role[] | Role): MarginLineVisibility {
+  const brokerSide = can(roles, PERMISSIONS.MARGIN_BROKER_VIEW);
+  const dispatchSide = can(roles, PERMISSIONS.MARGIN_DISPATCH_VIEW);
+  return {
+    shipperCost: brokerSide,
+    broker: brokerSide,
+    dispatch: dispatchSide,
+    carrierPay: dispatchSide,
+    any: brokerSide || dispatchSide,
+  };
 }
