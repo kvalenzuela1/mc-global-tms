@@ -7,11 +7,12 @@ import { getServerSupabase, getServiceRoleSupabase } from '@/lib/supabase/server
 import { PERMISSIONS } from '@/lib/rbac/permissions';
 import { ROLES } from '@/lib/rbac/roles';
 import {
-  isValidPackagingType,
-  isValidWeightUnit,
+  validateRfqInput,
+  ltlTotalWeightLb,
   isValidDimensionUnit,
-  isValidFreightClass,
-  isValidNmfcCode,
+  isValidWeightUnit,
+  type RfqValidationInput,
+  type HandlingUnitInput,
 } from '@/lib/rfqs/freight-detail';
 import type { ActionResult } from '@/lib/actions/result';
 
@@ -22,98 +23,172 @@ import type { ActionResult } from '@/lib/actions/result';
  * server-resolved active workspace, but requirePermission re-validates
  * membership + permission for it regardless, so a tampered value just 403s.
  *
+ * FR-RFQ-04: the RFQ is now shipment-type-driven (FTL/LTL/PTL). The client
+ * validates for inline errors, but this re-runs the EXACT same
+ * `validateRfqInput` contract — client input is never trusted. LTL handling
+ * units arrive as one JSON hidden field (there is no array-input precedent in
+ * this app; a single JSON field keeps parsing trivial and unambiguous). On
+ * success both branches redirect to the new RFQ's detail page (redirect()
+ * throws NEXT_REDIRECT, so nothing after it runs).
+ *
  * A shipper submitting their own RFQ is a different case, split out below:
- * `orgId` for them is their OWN org, not the broker tenant `rfqs.org_id`
- * must carry, and `rfqs_write` RLS has no shipper insert carve-out at all
- * (broker-org-only, same wall `signRatecon` in ratecons/actions.ts already
- * solved for carriers) — so that branch resolves the broker's org id itself
- * and writes through the service-role client instead.
+ * `orgId` for them is their OWN org, not the broker tenant `rfqs.org_id` must
+ * carry, and `rfqs_write` RLS has no shipper insert carve-out at all
+ * (broker-org-only) — so that branch resolves the broker's org id itself and
+ * writes through the service-role client. The child `rfq_handling_units` write
+ * follows the same wall, so it uses the same client.
  */
 export async function createRfq(formData: FormData): Promise<ActionResult> {
   const orgId = String(formData.get('orgId') ?? '');
   const { ctx, membership } = await requirePermission(orgId, PERMISSIONS.RFQ_CREATE);
 
-  const serviceType = String(formData.get('serviceType') ?? 'trucking');
-  const origin = String(formData.get('origin') ?? '').trim();
-  const destination = String(formData.get('destination') ?? '').trim();
-  const freightDetails = String(formData.get('freightDetails') ?? '').trim() || null;
-  const pickupAt = String(formData.get('pickupAt') ?? '') || null;
+  const str = (name: string): string => String(formData.get(name) ?? '').trim();
+  const strOrNull = (name: string): string | null => str(name) || null;
+  const numOrNull = (name: string): number | null => {
+    const raw = str(name);
+    return raw ? Number(raw) : null;
+  };
+  const bool = (name: string): boolean => {
+    const v = str(name);
+    return v === 'true' || v === 'on' || v === '1';
+  };
 
-  if (!origin || !destination) {
-    return { ok: false, error: 'Origin and destination are required.' };
-  }
+  const shipmentType = str('shipmentType');
+  const isHazmat = bool('isHazmat');
 
-  const packagingType = String(formData.get('packagingType') ?? '').trim() || null;
-  if (packagingType && !isValidPackagingType(packagingType)) {
-    return { ok: false, error: 'Invalid packaging type.' };
-  }
-
-  const pieceCountRaw = formData.get('pieceCount');
-  const pieceCount = pieceCountRaw ? Number(pieceCountRaw) : null;
-  if (pieceCountRaw && (!Number.isInteger(pieceCount) || (pieceCount as number) < 0)) {
-    return { ok: false, error: 'Piece count must be a non-negative whole number.' };
-  }
-
-  const packageCountRaw = formData.get('packageCount');
-  const packageCount = packageCountRaw ? Number(packageCountRaw) : null;
-  if (packageCountRaw && (!Number.isInteger(packageCount) || (packageCount as number) < 0)) {
-    return { ok: false, error: 'Package count must be a non-negative whole number.' };
-  }
-
-  const grossWeightValueRaw = formData.get('grossWeightValue');
-  const grossWeightValue = grossWeightValueRaw ? Number(grossWeightValueRaw) : null;
-  if (grossWeightValueRaw && (!Number.isFinite(grossWeightValue) || (grossWeightValue as number) < 0)) {
-    return { ok: false, error: 'Enter a valid gross weight.' };
-  }
-  const grossWeightUnit = String(formData.get('grossWeightUnit') ?? 'lb');
-  if (!isValidWeightUnit(grossWeightUnit)) {
-    return { ok: false, error: 'Invalid weight unit.' };
-  }
-
-  const lengthValueRaw = formData.get('lengthValue');
-  const lengthValue = lengthValueRaw ? Number(lengthValueRaw) : null;
-  const widthValueRaw = formData.get('widthValue');
-  const widthValue = widthValueRaw ? Number(widthValueRaw) : null;
-  const heightValueRaw = formData.get('heightValue');
-  const heightValue = heightValueRaw ? Number(heightValueRaw) : null;
-  for (const [raw, value] of [
-    [lengthValueRaw, lengthValue],
-    [widthValueRaw, widthValue],
-    [heightValueRaw, heightValue],
-  ] as const) {
-    if (raw && (!Number.isFinite(value) || (value as number) < 0)) {
-      return { ok: false, error: 'Enter valid dimensions.' };
+  // Parse LTL handling units from the single JSON hidden field.
+  let handlingUnits: HandlingUnitInput[] = [];
+  const unitsRaw = str('handlingUnits');
+  if (unitsRaw) {
+    try {
+      const parsed = JSON.parse(unitsRaw);
+      if (Array.isArray(parsed)) handlingUnits = parsed as HandlingUnitInput[];
+    } catch {
+      return { ok: false, error: 'Could not read the handling units. Please re-enter them.' };
     }
   }
-  const dimensionUnit = String(formData.get('dimensionUnit') ?? 'in');
-  if (!isValidDimensionUnit(dimensionUnit)) {
-    return { ok: false, error: 'Invalid dimension unit.' };
+
+  const validationInput: RfqValidationInput = {
+    shipmentType,
+    shipFromCity: str('shipFromCity'),
+    shipFromState: str('shipFromState'),
+    shipFromZip: str('shipFromZip'),
+    shipToCity: str('shipToCity'),
+    shipToState: str('shipToState'),
+    shipToZip: str('shipToZip'),
+    pickupDate: str('pickupDate'),
+    pickupWindowStart: str('pickupWindowStart'),
+    pickupWindowEnd: str('pickupWindowEnd'),
+    deliveryDate: str('deliveryDate'),
+    commodity: str('commodity'),
+    totalWeight: str('totalWeight'),
+    isHazmat,
+    unNumber: str('unNumber'),
+    hazmatClass: str('hazmatClass'),
+    equipmentType: str('equipmentType'),
+    temperatureF: str('temperatureF'),
+    trailerSize: str('trailerSize'),
+    palletCount: str('palletCount'),
+    lengthIn: str('lengthIn'),
+    widthIn: str('widthIn'),
+    heightIn: str('heightIn'),
+    linearFeet: str('linearFeet'),
+    freightDescription: str('freightDescription'),
+    handlingUnits,
+  };
+
+  // Inject "today" as a YYYY-MM-DD string so the validator stays pure and the
+  // past-date rule is deterministic. Server clock is the authority — the client
+  // can't backdate a pickup by lying about "now".
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const validation = validateRfqInput(validationInput, todayIso);
+  if (!validation.ok) {
+    return { ok: false, error: Object.values(validation.errors)[0] ?? 'Please correct the highlighted fields.' };
   }
 
-  const nmfcCode = String(formData.get('nmfcCode') ?? '').trim() || null;
-  if (nmfcCode && !isValidNmfcCode(nmfcCode)) {
-    return { ok: false, error: 'NMFC code should contain only digits, spaces, or hyphens.' };
-  }
+  // Units for storage are always inches + lb (see migration 0015).
+  const dimensionUnit = shipmentType === 'ltl' ? 'in' : str('dimensionUnit') || 'in';
+  if (!isValidDimensionUnit(dimensionUnit)) return { ok: false, error: 'Invalid dimension unit.' };
+  const grossWeightUnit = shipmentType === 'ltl' ? 'lb' : str('grossWeightUnit') || 'lb';
+  if (!isValidWeightUnit(grossWeightUnit)) return { ok: false, error: 'Invalid weight unit.' };
 
-  const freightClassRaw = formData.get('freightClass');
-  const freightClass = freightClassRaw ? Number(freightClassRaw) : null;
-  if (freightClassRaw && !isValidFreightClass(freightClass as number)) {
-    return { ok: false, error: 'Invalid freight class.' };
-  }
+  // Derived gross weight: entered for FTL/PTL, summed from the units for LTL
+  // (never a separate, contradictable client field for LTL).
+  const grossWeightValue =
+    shipmentType === 'ltl' ? ltlTotalWeightLb(handlingUnits) : numOrNull('totalWeight');
 
-  const freightDetailFields = {
-    packaging_type: packagingType,
-    piece_count: pieceCount,
-    package_count: packageCount,
+  // Keep origin/destination populated as a "City, ST" display string so every
+  // existing reader (list, detail, ratecons, loads) is unaffected by the move
+  // to structured addresses.
+  const origin = `${str('shipFromCity')}, ${str('shipFromState')}`;
+  const destination = `${str('shipToCity')}, ${str('shipToState')}`;
+
+  const rfqRecord = {
+    service_type: str('serviceType') || 'trucking',
+    shipment_type: shipmentType,
+    origin,
+    destination,
+    ship_from_name: strOrNull('shipFromName'),
+    ship_from_address: strOrNull('shipFromAddress'),
+    ship_from_city: str('shipFromCity'),
+    ship_from_state: str('shipFromState'),
+    ship_from_zip: str('shipFromZip'),
+    ship_to_name: strOrNull('shipToName'),
+    ship_to_address: strOrNull('shipToAddress'),
+    ship_to_city: str('shipToCity'),
+    ship_to_state: str('shipToState'),
+    ship_to_zip: str('shipToZip'),
+    commodity: str('commodity'),
+    reference_number: strOrNull('referenceNumber'),
+    freight_details: null as string | null,
+    pickup_at: strOrNull('pickupDate'),
+    pickup_window_start: strOrNull('pickupWindowStart'),
+    pickup_window_end: strOrNull('pickupWindowEnd'),
+    delivery_at: strOrNull('deliveryDate'),
+    acc_liftgate: bool('accLiftgate'),
+    acc_residential: bool('accResidential'),
+    acc_inside_pickup: bool('accInsidePickup'),
+    acc_inside_delivery: bool('accInsideDelivery'),
+    acc_limited_access: bool('accLimitedAccess'),
+    is_hazmat: isHazmat,
+    un_number: isHazmat ? strOrNull('unNumber') : null,
+    hazmat_class: isHazmat ? strOrNull('hazmatClass') : null,
+    // FTL (equipment_type is shared vocab from 0014; only set for FTL here).
+    equipment_type: shipmentType === 'ftl' ? strOrNull('equipmentType') : null,
+    temperature_f: shipmentType === 'ftl' && str('equipmentType') === 'reefer' ? numOrNull('temperatureF') : null,
+    trailer_size: shipmentType === 'ftl' ? strOrNull('trailerSize') : null,
+    // FTL/PTL shared
+    pallet_count: shipmentType === 'ltl' ? null : numOrNull('palletCount'),
+    stackable: shipmentType === 'ltl' ? false : bool('stackable'),
+    // PTL (dims/weight reuse the 0010 single-value columns)
+    length_value: shipmentType === 'ptl' ? numOrNull('lengthIn') : null,
+    width_value: shipmentType === 'ptl' ? numOrNull('widthIn') : null,
+    height_value: shipmentType === 'ptl' ? numOrNull('heightIn') : null,
+    dimension_unit: dimensionUnit,
+    linear_feet: shipmentType === 'ptl' ? numOrNull('linearFeet') : null,
+    freight_description: shipmentType === 'ptl' ? strOrNull('freightDescription') : null,
     gross_weight_value: grossWeightValue,
     gross_weight_unit: grossWeightUnit,
-    length_value: lengthValue,
-    width_value: widthValue,
-    height_value: heightValue,
-    dimension_unit: dimensionUnit,
-    nmfc_code: nmfcCode,
-    freight_class: freightClass,
+    status: 'open',
+    created_by: ctx.userId,
   };
+
+  const unitRows = (orgIdForUnits: string, rfqId: string) =>
+    handlingUnits.map((u, i) => ({
+      rfq_id: rfqId,
+      org_id: orgIdForUnits,
+      position: i,
+      length_in: Number(u.lengthIn),
+      width_in: Number(u.widthIn),
+      height_in: Number(u.heightIn),
+      weight_lb: Number(u.weightLb),
+      unit_count: Number(u.unitCount),
+      packaging_type: String(u.packagingType),
+      freight_class: Number(u.freightClass),
+      freight_class_is_override: Boolean(u.freightClassIsOverride),
+      nmfc_code: u.nmfcCode ? String(u.nmfcCode).trim() : null,
+      stackable: Boolean(u.stackable),
+    }));
 
   if (membership.role === ROLES.SHIPPER) {
     const supabase = await getServerSupabase();
@@ -130,48 +205,44 @@ export async function createRfq(formData: FormData): Promise<ActionResult> {
     const serviceRole = getServiceRoleSupabase();
     const { data: created, error } = await serviceRole
       .from('rfqs')
-      .insert({
-        org_id: shipper.org_id,
-        shipper_id: shipper.id,
-        service_type: serviceType,
-        origin,
-        destination,
-        freight_details: freightDetails,
-        pickup_at: pickupAt,
-        status: 'open',
-        created_by: ctx.userId,
-        ...freightDetailFields,
-      })
+      .insert({ ...rfqRecord, org_id: shipper.org_id, shipper_id: shipper.id })
       .select('id')
       .single();
     if (error) throw error;
 
-    // Land on the new RFQ's detail page, same as createLoadFromQuote. redirect()
-    // throws NEXT_REDIRECT, so nothing after it runs and the ActionResult
-    // return is never reached on the success path.
+    if (shipmentType === 'ltl' && handlingUnits.length > 0) {
+      const { error: unitError } = await serviceRole
+        .from('rfq_handling_units')
+        .insert(unitRows(shipper.org_id, created.id));
+      if (unitError) {
+        // Don't leave an RFQ with no freight behind if the child insert fails.
+        await serviceRole.from('rfqs').delete().eq('id', created.id);
+        throw unitError;
+      }
+    }
+
     revalidatePath('/portal/rfqs');
     redirect(`/portal/rfqs/${created.id}`);
   }
 
-  const shipperId = String(formData.get('shipperId') ?? '') || null;
+  const shipperId = strOrNull('shipperId');
   const supabase = await getServerSupabase();
   const { data: created, error } = await supabase
     .from('rfqs')
-    .insert({
-      org_id: orgId,
-      shipper_id: shipperId,
-      service_type: serviceType,
-      origin,
-      destination,
-      freight_details: freightDetails,
-      pickup_at: pickupAt,
-      status: 'open',
-      created_by: ctx.userId,
-      ...freightDetailFields,
-    })
+    .insert({ ...rfqRecord, org_id: orgId, shipper_id: shipperId })
     .select('id')
     .single();
   if (error) throw error;
+
+  if (shipmentType === 'ltl' && handlingUnits.length > 0) {
+    const { error: unitError } = await supabase
+      .from('rfq_handling_units')
+      .insert(unitRows(orgId, created.id));
+    if (unitError) {
+      await supabase.from('rfqs').delete().eq('id', created.id);
+      throw unitError;
+    }
+  }
 
   revalidatePath('/portal/rfqs');
   redirect(`/portal/rfqs/${created.id}`);
