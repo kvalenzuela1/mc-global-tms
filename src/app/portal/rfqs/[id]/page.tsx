@@ -4,7 +4,12 @@ import { getSessionContext } from '@/lib/tenant/context';
 import { can, PERMISSIONS } from '@/lib/rbac/permissions';
 import { getServerSupabase } from '@/lib/supabase/server';
 import { RFQ_STATUS, RFQ_STATUS_SEQUENCE, RFQ_STATUS_LABELS, type RfqStatus } from '@/lib/rfqs/lifecycle';
-import { PACKAGING_TYPE_LABELS, type PackagingType } from '@/lib/rfqs/freight-detail';
+import {
+  PACKAGING_TYPE_LABELS,
+  SHIPMENT_TYPE_LABELS,
+  type PackagingType,
+  type ShipmentType,
+} from '@/lib/rfqs/freight-detail';
 import { equipmentLabel, equipmentTypesByCategory } from '@/lib/rfqs/equipment';
 import { resolveRfqRequiredAction } from '@/lib/workflow/required-action';
 import { Breadcrumb } from '../../_components/breadcrumb';
@@ -38,6 +43,51 @@ interface RfqDetail {
   freight_class: number | null;
   equipment_type: string | null;
   commodity: string | null;
+  // FR-RFQ-04 shipment-type fields
+  shipment_type: ShipmentType | null;
+  ship_from_name: string | null;
+  ship_from_address: string | null;
+  ship_from_city: string | null;
+  ship_from_state: string | null;
+  ship_from_zip: string | null;
+  ship_to_name: string | null;
+  ship_to_address: string | null;
+  ship_to_city: string | null;
+  ship_to_state: string | null;
+  ship_to_zip: string | null;
+  reference_number: string | null;
+  pickup_window_start: string | null;
+  pickup_window_end: string | null;
+  delivery_at: string | null;
+  acc_liftgate: boolean;
+  acc_residential: boolean;
+  acc_inside_pickup: boolean;
+  acc_inside_delivery: boolean;
+  acc_limited_access: boolean;
+  is_hazmat: boolean;
+  un_number: string | null;
+  hazmat_class: string | null;
+  temperature_f: number | null;
+  trailer_size: string | null;
+  pallet_count: number | null;
+  stackable: boolean;
+  linear_feet: number | null;
+  freight_description: string | null;
+}
+
+interface HandlingUnitRow {
+  id: string;
+  position: number;
+  length_in: number;
+  width_in: number;
+  height_in: number;
+  weight_lb: number;
+  unit_count: number;
+  packaging_type: PackagingType;
+  freight_class: number;
+  freight_class_is_override: boolean;
+  nmfc_code: string | null;
+  stackable: boolean;
 }
 
 interface QuoteRow {
@@ -97,7 +147,13 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
       'id, origin, destination, service_type, status, freight_details, pickup_at, created_at, shippers(name), ' +
         'packaging_type, piece_count, package_count, gross_weight_value, gross_weight_unit, ' +
         'length_value, width_value, height_value, dimension_unit, nmfc_code, freight_class, ' +
-        'equipment_type, commodity',
+        'equipment_type, commodity, ' +
+        'shipment_type, ship_from_name, ship_from_address, ship_from_city, ship_from_state, ship_from_zip, ' +
+        'ship_to_name, ship_to_address, ship_to_city, ship_to_state, ship_to_zip, ' +
+        'reference_number, pickup_window_start, pickup_window_end, delivery_at, ' +
+        'acc_liftgate, acc_residential, acc_inside_pickup, acc_inside_delivery, acc_limited_access, ' +
+        'is_hazmat, un_number, hazmat_class, temperature_f, trailer_size, ' +
+        'pallet_count, stackable, linear_feet, freight_description',
     )
     .eq('id', id)
     .eq('org_id', active.orgId)
@@ -105,6 +161,20 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
   if (error) throw error;
   if (!rfq) notFound();
   const detail = rfq as unknown as RfqDetail;
+
+  // LTL freight lives in the child table; other types have none.
+  let handlingUnits: HandlingUnitRow[] = [];
+  if (detail.shipment_type === 'ltl') {
+    const { data: unitData, error: unitError } = await supabase
+      .from('rfq_handling_units')
+      .select(
+        'id, position, length_in, width_in, height_in, weight_lb, unit_count, packaging_type, freight_class, freight_class_is_override, nmfc_code, stackable',
+      )
+      .eq('rfq_id', id)
+      .order('position', { ascending: true });
+    if (unitError) throw unitError;
+    handlingUnits = (unitData as HandlingUnitRow[]) ?? [];
+  }
 
   const { data: quoteData, error: quoteError } = await supabase
     .from('quotes')
@@ -155,6 +225,7 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
           </h1>
           <p className="text-muted mt-1">
             {detail.shippers?.name ?? 'No shipper assigned'} · {detail.service_type}
+            {detail.shipment_type ? ` · ${SHIPMENT_TYPE_LABELS[detail.shipment_type]}` : ''}
           </p>
         </div>
         <StatusBadge facet={STATUS_FACET.RFQ} value={detail.status} className="whitespace-nowrap" />
@@ -174,6 +245,40 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
         <div className="panel p-6">
           <h2 className="font-semibold">RFQ details</h2>
           <dl className="mt-4 space-y-3 text-sm">
+            {detail.shipment_type && (
+              <>
+                <Row label="Ship From" value={formatAddress(detail.ship_from_name, detail.ship_from_city, detail.ship_from_state, detail.ship_from_zip)} />
+                <Row label="Ship To" value={formatAddress(detail.ship_to_name, detail.ship_to_city, detail.ship_to_state, detail.ship_to_zip)} />
+                <Row label="Reference / PO" value={detail.reference_number} />
+                {(detail.pickup_window_start || detail.pickup_window_end) && (
+                  <Row label="Pickup window" value={`${detail.pickup_window_start ?? '—'} – ${detail.pickup_window_end ?? '—'}`} />
+                )}
+                <Row label="Delivery date" value={detail.delivery_at ? new Date(detail.delivery_at).toLocaleDateString() : null} />
+                {detail.shipment_type === 'ftl' && (
+                  <>
+                    <Row label="Trailer size" value={detail.trailer_size ? `${detail.trailer_size} ft` : null} />
+                    {detail.equipment_type === 'reefer' && (
+                      <Row label="Temperature" value={detail.temperature_f != null ? `${detail.temperature_f} °F` : null} />
+                    )}
+                    <Row label="Pallets" value={detail.pallet_count} />
+                    <Row label="Stackable" value={detail.stackable ? 'Yes' : 'No'} />
+                  </>
+                )}
+                {detail.shipment_type === 'ptl' && (
+                  <>
+                    <Row label="Linear feet" value={detail.linear_feet} />
+                    <Row label="Pallets" value={detail.pallet_count} />
+                    <Row label="Freight description" value={detail.freight_description} />
+                    <Row label="Stackable" value={detail.stackable ? 'Yes' : 'No'} />
+                  </>
+                )}
+                <Row label="Accessorials" value={activeAccessorials(detail)} />
+                <Row
+                  label="Hazmat"
+                  value={detail.is_hazmat ? `Yes · UN ${detail.un_number ?? '—'} · Class ${detail.hazmat_class ?? '—'}` : 'No'}
+                />
+              </>
+            )}
             <div className="flex justify-between gap-4">
               <dt className="text-muted">Freight details</dt>
               <dd className="text-right">{detail.freight_details ?? '—'}</dd>
@@ -229,6 +334,31 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
               <dd className="text-right">{new Date(detail.created_at).toLocaleString()}</dd>
             </div>
           </dl>
+
+          {detail.shipment_type === 'ltl' && (
+            <div className="mt-4 border-t border-line pt-4">
+              <h3 className="text-sm font-semibold">Handling units</h3>
+              {handlingUnits.length === 0 ? (
+                <p className="text-sm text-muted mt-1">No handling units recorded.</p>
+              ) : (
+                <ul className="mt-2 space-y-2">
+                  {handlingUnits.map((u, i) => (
+                    <li key={u.id} className="text-sm border-t border-line pt-2">
+                      <p className="font-medium">
+                        Unit {i + 1} · {u.unit_count} × {PACKAGING_TYPE_LABELS[u.packaging_type]}
+                      </p>
+                      <p className="text-muted text-xs">
+                        {u.length_in} × {u.width_in} × {u.height_in} in · {u.weight_lb} lb · Class {u.freight_class}
+                        {u.freight_class_is_override ? ' (manual)' : ' (auto)'}
+                        {u.nmfc_code ? ` · NMFC ${u.nmfc_code}` : ''}
+                        {u.stackable ? ' · stackable' : ''}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           {canManage && (
             <ActionForm action={setRfqFreight} className="mt-6 border-t border-line pt-4 space-y-3">
@@ -304,6 +434,31 @@ export default async function RfqDetailPage({ params }: { params: Promise<{ id: 
       </div>
     </div>
   );
+}
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <dt className="text-muted">{label}</dt>
+      <dd className="text-right">{value ?? '—'}</dd>
+    </div>
+  );
+}
+
+function formatAddress(name: string | null, city: string | null, state: string | null, zip: string | null): string {
+  const line = [city, state].filter(Boolean).join(', ');
+  const withZip = [line, zip].filter(Boolean).join(' ');
+  return [name, withZip].filter(Boolean).join(' · ') || '—';
+}
+
+function activeAccessorials(detail: RfqDetail): string {
+  const on: string[] = [];
+  if (detail.acc_liftgate) on.push('Liftgate');
+  if (detail.acc_residential) on.push('Residential');
+  if (detail.acc_inside_pickup) on.push('Inside pickup');
+  if (detail.acc_inside_delivery) on.push('Inside delivery');
+  if (detail.acc_limited_access) on.push('Limited access');
+  return on.length ? on.join(', ') : 'None';
 }
 
 function NotAuthorized() {
