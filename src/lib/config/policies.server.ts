@@ -8,7 +8,13 @@
 
 import { getServerSupabase } from '@/lib/supabase/server';
 import { DEFAULT_PRICING_CONFIG, type PricingConfig } from '@/lib/pricing/calc';
-import { resolvePricingConfig, type PolicyRow, type PolicyScope } from '@/lib/config/policy-resolver';
+import { DEFAULT_LOAD_MARGIN_CONFIG, type LoadMarginConfig } from '@/lib/pricing/margin';
+import {
+  resolvePricingConfig,
+  resolveLoadMarginConfig,
+  type PolicyRow,
+  type PolicyScope,
+} from '@/lib/config/policy-resolver';
 
 interface PolicyRecord {
   org_id: string | null;
@@ -45,4 +51,14 @@ async function getActivePolicyRows(orgId: string, policyKey: string): Promise<Po
 export async function resolveOrgPricingConfig(orgId: string): Promise<PricingConfig> {
   const rows = await getActivePolicyRows(orgId, 'pricing');
   return resolvePricingConfig(rows, DEFAULT_PRICING_CONFIG);
+}
+
+/**
+ * FR-MGN-04: resolve the org house default for the two load-margin percentages
+ * (platform seed → org-scope row). Per-customer and per-load overrides sit on
+ * top of this via `resolveMarginPercents`.
+ */
+export async function resolveOrgLoadMarginConfig(orgId: string): Promise<LoadMarginConfig> {
+  const rows = await getActivePolicyRows(orgId, 'load_margins');
+  return resolveLoadMarginConfig(rows, DEFAULT_LOAD_MARGIN_CONFIG);
 }

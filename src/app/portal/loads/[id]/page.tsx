@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getSessionContext } from '@/lib/tenant/context';
-import { can, PERMISSIONS } from '@/lib/rbac/permissions';
+import { can, visibleMarginLines, PERMISSIONS } from '@/lib/rbac/permissions';
 import { isInternalRole } from '@/lib/rbac/roles';
 import { getServerSupabase } from '@/lib/supabase/server';
 import {
@@ -11,7 +11,8 @@ import {
   nextStatuses,
   type LoadStatus,
 } from '@/lib/loads/lifecycle';
-import { readSnapshotCents } from '@/lib/pricing/snapshot';
+import { computeLoadFinancials, resolveMarginPercents } from '@/lib/pricing/margin';
+import { resolveOrgLoadMarginConfig } from '@/lib/config/policies.server';
 import { getCarrierComplianceResult } from '@/lib/compliance/policy.server';
 import { type ComplianceResult } from '@/lib/compliance/gate';
 import { resolveLoadRequiredAction } from '@/lib/workflow/required-action';
@@ -27,7 +28,17 @@ import { SubmitButton } from '../../_components/submit-button';
 import { LifecycleTimeline } from '../../_components/lifecycle-timeline';
 import { RequiredActionRail } from '../../_components/required-action-rail';
 import { StatusBadge, STATUS_FACET } from '../../_components/status-badge';
-import { advanceLoadStatus, addAccessorial } from '../actions';
+import { advanceLoadStatus, addAccessorial, editLoadMargins } from '../actions';
+
+/** $2,000.00 — grouped, always two decimals, matching the reference model. */
+function money(cents: number): string {
+  return `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** 0.18 -> "18%", 0.225 -> "22.5%" (no trailing zeros). */
+function pctLabel(decimal: number): string {
+  return `${Number((decimal * 100).toFixed(2))}%`;
+}
 
 // The rail is shown only for the window where the §9 load resolver maps
 // faithfully to a real Phase-1 next step. Draft/quoted are excluded — the
@@ -83,6 +94,12 @@ interface SourceQuoteRow {
   margin_percent: number;
 }
 
+interface LoadFinancialRow {
+  shipper_cost_cents: number | null;
+  broker_percent: number | null;
+  dispatch_percent: number | null;
+}
+
 export default async function LoadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
@@ -95,6 +112,8 @@ export default async function LoadDetailPage({ params }: { params: Promise<{ id:
   }
 
   const showCommercials = isInternalRole(active.role);
+  const vis = visibleMarginLines(active.role);
+  const canConfigMargins = can(active.role, PERMISSIONS.MARGIN_CONFIG);
   const canAdvance = can(active.role, PERMISSIONS.LOAD_TRANSITION);
   const canEditAccessorials = can(active.role, PERMISSIONS.LOAD_EDIT);
 
@@ -162,9 +181,28 @@ export default async function LoadDetailPage({ params }: { params: Promise<{ id:
     rateconSigned = Boolean(signedRc);
   }
 
-  const margin = showCommercials
-    ? readSnapshotCents(load.commercial_snapshot, 'marginAmountCents', 'margin_amount_cents')
-    : undefined;
+  // FR-MGN: the reference-model financials come through the `load_financials`
+  // view (migration 0011), which nulls them for anyone outside the broker org.
+  // Percents fall back to the org house default if a column is null (e.g. a
+  // load booked before this feature), then the waterfall is recomputed.
+  let financials: ReturnType<typeof computeLoadFinancials> | null = null;
+  let financialInputs: LoadFinancialRow | null = null;
+  if (vis.any) {
+    const { data: finData } = await supabase
+      .from('load_financials')
+      .select('shipper_cost_cents, broker_percent, dispatch_percent')
+      .eq('id', id)
+      .maybeSingle();
+    financialInputs = (finData as LoadFinancialRow | null) ?? null;
+    if (financialInputs && typeof financialInputs.shipper_cost_cents === 'number' && financialInputs.shipper_cost_cents > 0) {
+      const orgDefault = await resolveOrgLoadMarginConfig(active.orgId);
+      const { brokerPercent, dispatchPercent } = resolveMarginPercents({
+        load: { brokerPercent: financialInputs.broker_percent, dispatchPercent: financialInputs.dispatch_percent },
+        orgDefault,
+      });
+      financials = computeLoadFinancials({ shipperCostCents: financialInputs.shipper_cost_cents, brokerPercent, dispatchPercent });
+    }
+  }
   const accessorialTotalCents = accessorials.reduce((sum, a) => sum + a.amount_cents, 0);
 
   const rawNext = nextStatuses(load.status);
@@ -264,17 +302,6 @@ export default async function LoadDetailPage({ params }: { params: Promise<{ id:
                 )}
               </dd>
             </div>
-            {showCommercials && (
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted">Margin</dt>
-                <dd className="text-right">
-                  {typeof margin === 'number' ? `$${(margin / 100).toFixed(2)}` : '—'}
-                  {sourceQuote && (
-                    <span className="text-muted"> ({(sourceQuote.margin_percent * 100).toFixed(1)}%)</span>
-                  )}
-                </dd>
-              </div>
-            )}
             {showCommercials && (
               <div className="flex justify-between gap-4">
                 <dt className="text-muted">Source quote</dt>
@@ -418,6 +445,112 @@ export default async function LoadDetailPage({ params }: { params: Promise<{ id:
           </div>
         )}
           </div>
+
+          {vis.any && (
+            <div className="grid lg:grid-cols-2 gap-6">
+              <div className="panel p-6">
+                <h2 className="font-semibold">Financials</h2>
+                {financials ? (
+                  <table className="mt-4 w-full text-sm">
+                    <thead className="text-muted text-left">
+                      <tr className="border-b border-line">
+                        <th className="pb-2 font-normal">Description</th>
+                        <th className="pb-2 font-normal text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {vis.shipperCost && (
+                        <tr className="border-t border-line">
+                          <td className="py-2">Shipper Cost</td>
+                          <td className="py-2 text-right tabular-nums">{money(financials.shipperCostCents)}</td>
+                        </tr>
+                      )}
+                      {vis.broker && (
+                        <tr className="border-t border-line">
+                          <td className="py-2">Broker ({pctLabel(financials.brokerPercent)})</td>
+                          <td className="py-2 text-right tabular-nums">-{money(financials.brokerMarginCents)}</td>
+                        </tr>
+                      )}
+                      {vis.dispatch && (
+                        <tr className="border-t border-line">
+                          <td className="py-2">Dispatch ({pctLabel(financials.dispatchPercent)})</td>
+                          <td className="py-2 text-right tabular-nums">-{money(financials.dispatchMarginCents)}</td>
+                        </tr>
+                      )}
+                      {vis.carrierPay && (
+                        <tr className="border-t border-line font-semibold">
+                          <td className="py-2">Carrier Pay</td>
+                          <td className="py-2 text-right tabular-nums">{money(financials.carrierPayCents)}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="text-sm text-muted mt-3">No Shipper Cost recorded for this load yet.</p>
+                )}
+              </div>
+
+              {canConfigMargins && (
+                <div className="panel p-6">
+                  <h2 className="font-semibold">Override this load&apos;s margins</h2>
+                  <p className="text-xs text-muted mt-1">
+                    Overrides the customer and house defaults for this load only. Carrier Pay recomputes automatically.
+                  </p>
+                  <ActionForm action={editLoadMargins} className="mt-4 space-y-4">
+                    <input type="hidden" name="orgId" value={active.orgId} />
+                    <input type="hidden" name="loadId" value={load.id} />
+                    <div>
+                      <label className="block text-sm mb-1">Shipper Cost (USD)</label>
+                      <input
+                        name="shipperCostDollars"
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        required
+                        defaultValue={
+                          typeof financialInputs?.shipper_cost_cents === 'number'
+                            ? (financialInputs.shipper_cost_cents / 100).toFixed(2)
+                            : ''
+                        }
+                        className="input"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm mb-1">Broker %</label>
+                        <input
+                          name="brokerPercent"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          required
+                          defaultValue={financials ? Number((financials.brokerPercent * 100).toFixed(2)) : ''}
+                          className="input"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm mb-1">Dispatch %</label>
+                        <input
+                          name="dispatchPercent"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          required
+                          defaultValue={financials ? Number((financials.dispatchPercent * 100).toFixed(2)) : ''}
+                          className="input"
+                        />
+                      </div>
+                    </div>
+                    <SubmitButton className="btn-copper px-4 py-2" pendingLabel="Saving…">
+                      Save margins
+                    </SubmitButton>
+                  </ActionForm>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         {requiredAction && <RequiredActionRail action={requiredAction} hideCta />}
       </div>

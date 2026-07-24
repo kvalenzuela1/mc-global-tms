@@ -29,6 +29,8 @@ export const AUDIT_ACTIONS = {
   DOCUMENT_VERIFIED: 'document.verified',
   DOCUMENT_REJECTED: 'document.rejected',
   ACCESSORIAL_ADDED: 'accessorial.added',
+  LOAD_MARGIN_UPDATED: 'load.margin_updated',
+  MARGIN_CONFIG_UPDATED: 'margin.config_updated',
   CUSTOMER_CREATED: 'customer.created',
   CUSTOMER_UPDATED: 'customer.updated',
   CUSTOMER_CONTACT_ADDED: 'customer.contact_added',

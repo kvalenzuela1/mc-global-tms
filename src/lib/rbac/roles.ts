@@ -23,6 +23,10 @@ export const ROLES = {
   DRIVER: 'driver',
   /** Shipper — sees only their own records. */
   SHIPPER: 'shipper',
+  /** Invoicing — internal finance staff: read-all loads, view both margin
+   *  sides, manage invoices/payables. No settings/user-management, no
+   *  quoting/booking, no margin-config editing. */
+  INVOICING: 'invoicing',
   /** Platform Superadmin — separate operator console, cross-tenant, audited. */
   PLATFORM_SUPERADMIN: 'platform_superadmin',
 } as const;
@@ -36,6 +40,7 @@ export const INTERNAL_ROLES: Role[] = [
   ROLES.ORG_ADMIN,
   ROLES.BROKER_MANAGER,
   ROLES.BROKER_DISPATCHER,
+  ROLES.INVOICING,
 ];
 
 /** Roles that belong to an external partner org (carrier / driver / shipper). */
@@ -71,5 +76,6 @@ export const ROLE_LABELS: Record<Role, string> = {
   [ROLES.CARRIER_DISPATCH]: 'Carrier Admin / Dispatch',
   [ROLES.DRIVER]: 'Driver',
   [ROLES.SHIPPER]: 'Shipper',
+  [ROLES.INVOICING]: 'Invoicing',
   [ROLES.PLATFORM_SUPERADMIN]: 'Platform Superadmin',
 };

@@ -14,6 +14,8 @@ import {
   type LoadStatus,
 } from '@/lib/loads/lifecycle';
 import { isQuoteReleasable } from '@/lib/pricing/override';
+import { resolveMarginPercents, validateMarginInputs } from '@/lib/pricing/margin';
+import { resolveOrgLoadMarginConfig } from '@/lib/config/policies.server';
 import { getCarrierComplianceResult } from '@/lib/compliance/policy.server';
 import { evaluateComplianceOverride } from '@/lib/compliance/override';
 import type { ComplianceResult } from '@/lib/compliance/gate';
@@ -38,6 +40,7 @@ interface BookableQuote {
   rfq_id: string | null;
   is_override: boolean;
   override_approved_by: string | null;
+  shipper_price_cents: number;
   pricing_snapshot: Record<string, unknown>;
 }
 
@@ -62,7 +65,7 @@ export async function createLoadFromQuote(formData: FormData): Promise<ActionRes
   const supabase = await getServerSupabase();
   const { data: quote, error: quoteError } = await supabase
     .from('quotes')
-    .select('id, load_id, rfq_id, is_override, override_approved_by, pricing_snapshot')
+    .select('id, load_id, rfq_id, is_override, override_approved_by, shipper_price_cents, pricing_snapshot')
     .eq('id', quoteId)
     .eq('org_id', orgId)
     .single();
@@ -73,6 +76,36 @@ export async function createLoadFromQuote(formData: FormData): Promise<ActionRes
   if (!isQuoteReleasable({ required: bookable.is_override, reasons: [] }, bookable.override_approved_by)) {
     return { ok: false, error: 'This quote needs an approved override before it can be booked.' };
   }
+
+  // FR-MGN-01/04: seed the load's reference-model financials. Shipper Cost is
+  // the quote's shipper price; the two percentages resolve customer(shipper)
+  // default → org house default → platform seed (a per-load override can be
+  // set later on the load detail page). Carrier Pay is never stored — it's
+  // recomputed everywhere from these inputs.
+  let shipperId: string | null = null;
+  let customerRates: { brokerPercent: number | null; dispatchPercent: number | null } | null = null;
+  if (bookable.rfq_id) {
+    const { data: rfq, error: rfqShipperError } = await supabase
+      .from('rfqs')
+      .select('shipper_id')
+      .eq('id', bookable.rfq_id)
+      .maybeSingle();
+    if (rfqShipperError) throw rfqShipperError;
+    shipperId = (rfq as { shipper_id: string | null } | null)?.shipper_id ?? null;
+  }
+  if (shipperId) {
+    const { data: shipper, error: shipperError } = await supabase
+      .from('shippers')
+      .select('broker_percent, dispatch_percent')
+      .eq('id', shipperId)
+      .maybeSingle();
+    if (shipperError) throw shipperError;
+    const s = shipper as { broker_percent: number | null; dispatch_percent: number | null } | null;
+    if (s) customerRates = { brokerPercent: s.broker_percent, dispatchPercent: s.dispatch_percent };
+  }
+  const orgDefault = await resolveOrgLoadMarginConfig(orgId);
+  const seededPercents = resolveMarginPercents({ customer: customerRates, orgDefault });
+  const shipperCostCents = bookable.shipper_price_cents;
 
   // FR-CMP-01/04: a carrier must be compliant to be assigned to a load.
   // Override is a business decision made once, at booking time — the release
@@ -118,6 +151,7 @@ export async function createLoadFromQuote(formData: FormData): Promise<ActionRes
       .insert({
         org_id: orgId,
         rfq_id: bookable.rfq_id,
+        shipper_id: shipperId,
         carrier_id: carrierId,
         service_type: 'trucking',
         reference,
@@ -125,6 +159,9 @@ export async function createLoadFromQuote(formData: FormData): Promise<ActionRes
         destination,
         status: 'quoted',
         commercial_snapshot: bookable.pricing_snapshot,
+        shipper_cost_cents: shipperCostCents,
+        broker_percent: seededPercents.brokerPercent,
+        dispatch_percent: seededPercents.dispatchPercent,
         created_by: ctx.userId,
       })
       .select('id, reference')
@@ -401,6 +438,73 @@ export async function addAccessorial(formData: FormData): Promise<ActionResult> 
     entityType: 'load',
     entityId: loadId,
     after: { accessorialId: data.id, type, amountCents, billableTo },
+  });
+
+  revalidatePath('/portal/loads');
+  revalidatePath(`/portal/loads/${loadId}`);
+  return { ok: true };
+}
+
+interface LoadMarginRow {
+  shipper_cost_cents: number | null;
+  broker_percent: number | null;
+  dispatch_percent: number | null;
+}
+
+/**
+ * FR-MGN-03/04: set the per-load override of Shipper Cost and the two
+ * percentages. Gated by MARGIN_CONFIG (Owner + Broker only — dispatchers can
+ * view but never edit), validated through the shared `validateMarginInputs`,
+ * and audited before/after. Carrier Pay is not written — it's recomputed from
+ * these inputs wherever the load is displayed.
+ */
+export async function editLoadMargins(formData: FormData): Promise<ActionResult> {
+  const orgId = String(formData.get('orgId') ?? '');
+  const loadId = String(formData.get('loadId') ?? '');
+  const shipperCostDollars = Number(formData.get('shipperCostDollars'));
+  const brokerPercentInput = Number(formData.get('brokerPercent'));
+  const dispatchPercentInput = Number(formData.get('dispatchPercent'));
+
+  const { ctx } = await requirePermission(orgId, PERMISSIONS.MARGIN_CONFIG);
+
+  if (!Number.isFinite(shipperCostDollars) || !Number.isFinite(brokerPercentInput) || !Number.isFinite(dispatchPercentInput)) {
+    return { ok: false, error: 'Enter Shipper Cost, Broker %, and Dispatch %.' };
+  }
+  // UI collects percents on the 0-100 scale; store/compute as decimals [0,1].
+  const shipperCostCents = Math.round(shipperCostDollars * 100);
+  const brokerPercent = brokerPercentInput / 100;
+  const dispatchPercent = dispatchPercentInput / 100;
+
+  const validation = validateMarginInputs({ shipperCostCents, brokerPercent, dispatchPercent });
+  if (!validation.ok) {
+    return { ok: false, error: validation.error };
+  }
+
+  const supabase = await getServerSupabase();
+  const { data: before, error: beforeError } = await supabase
+    .from('loads_data')
+    .select('shipper_cost_cents, broker_percent, dispatch_percent')
+    .eq('id', loadId)
+    .eq('org_id', orgId)
+    .single();
+  if (beforeError) throw beforeError;
+  if (!before) return { ok: false, error: 'Load not found.' };
+
+  const { error } = await supabase
+    .from('loads_data')
+    .update({ shipper_cost_cents: shipperCostCents, broker_percent: brokerPercent, dispatch_percent: dispatchPercent })
+    .eq('id', loadId)
+    .eq('org_id', orgId);
+  if (error) throw error;
+
+  await writeAudit({
+    orgId,
+    actorUserId: ctx.userId,
+    action: AUDIT_ACTIONS.LOAD_MARGIN_UPDATED,
+    entityType: 'load',
+    entityId: loadId,
+    before: before as LoadMarginRow,
+    after: { shipper_cost_cents: shipperCostCents, broker_percent: brokerPercent, dispatch_percent: dispatchPercent },
   });
 
   revalidatePath('/portal/loads');
